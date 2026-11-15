@@ -1,0 +1,12 @@
+{
+  "name": "tile-rummy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Static tile-rummy party game: one shared table screen plus phones as controllers.",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "serve": "node scripts/serve.js"
+  },
+  "license": "MIT"
+}

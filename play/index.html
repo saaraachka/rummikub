@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0f3b3a">
+  <meta name="format-detection" content="telephone=no">
+  <title>Tile Rummy</title>
+  <link rel="icon" href="../icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/common.css">
+  <link rel="stylesheet" href="../css/play.css">
+</head>
+<body>
+  <!-- Join -->
+  <section id="join" class="screen join" hidden>
+    <h1 class="logo">Tile Rummy</h1>
+    <form id="joinForm" autocomplete="off">
+      <label>Room code
+        <input id="codeInput" name="code" inputmode="text" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="4" placeholder="ABCD" required>
+      </label>
+      <label>Your name
+        <input id="nameInput" name="name" maxlength="16" autocorrect="off" placeholder="Name" required>
+      </label>
+      <button class="btn primary big" type="submit">Join table</button>
+      <p id="joinError" class="join-error" role="alert"></p>
+    </form>
+  </section>
+
+  <!-- Connecting / waiting / messages -->
+  <section id="wait" class="screen wait" hidden>
+    <div class="wait-card">
+      <div id="waitIcon" class="spinner" aria-hidden="true"></div>
+      <h2 id="waitTitle">Connecting…</h2>
+      <p id="waitText" class="muted"></p>
+      <ul id="waitPlayers" class="wait-players"></ul>
+      <button id="leaveBtn" class="btn ghost">Leave</button>
+    </div>
+  </section>
+
+  <!-- Game -->
+  <section id="game" class="screen game" hidden>
+    <header class="top">
+      <span id="connDot" class="dot on"></span>
+      <div class="turn"><b id="turnText"></b><span id="subText" class="muted"></span></div>
+      <span id="timer" class="timer" hidden></span>
+      <span class="pool-pill" title="Tiles left to draw"><i></i><b id="poolCount">0</b></span>
+    </header>
+    <div id="offline" class="offline" hidden>Reconnecting… your rack is safe.</div>
+
+    <main id="boardArea" class="board-area">
+      <div id="sets" class="sets"></div>
+      <div id="newSet" class="new-set">＋ New set: drop or tap here</div>
+    </main>
+
+    <div id="info" class="info" aria-live="polite"></div>
+
+    <section id="rackArea" class="rack-area">
+      <div class="rack-tools">
+        <button id="sortColor" class="chip">Sort by color</button>
+        <button id="sortNumber" class="chip">Sort by number</button>
+        <span id="rackCount" class="muted rack-count"></span>
+      </div>
+      <div id="rack" class="rack"></div>
+    </section>
+
+    <footer class="actions">
+      <button id="resetBtn" class="btn">Reset</button>
+      <button id="drawBtn" class="btn">Draw</button>
+      <button id="commitBtn" class="btn primary">Commit</button>
+    </footer>
+  </section>
+
+  <!-- Round over -->
+  <section id="over" class="screen wait" hidden>
+    <div class="wait-card">
+      <h2 id="overTitle"></h2>
+      <p id="overText"></p>
+      <ul id="overScores" class="wait-players"></ul>
+      <p class="muted">Waiting for the table to start the next round…</p>
+    </div>
+  </section>
+
+  <div id="caret" class="caret" hidden></div>
+  <script type="module" src="../js/play/main.js"></script>
+</body>
+</html>

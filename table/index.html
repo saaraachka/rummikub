@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0f3b3a">
+  <title>Tile Rummy · Table</title>
+  <link rel="icon" href="../icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/common.css">
+  <link rel="stylesheet" href="../css/table.css">
+</head>
+<body>
+  <div id="boot" class="boot">Opening the table…</div>
+
+  <section id="lobby" class="lobby" hidden>
+    <div class="lobby-join">
+      <h1 class="logo">Tile Rummy</h1>
+      <p class="lead">Scan to join on your phone</p>
+      <div id="qr" class="qr"></div>
+      <p class="or">or open <b id="joinUrl"></b> and enter</p>
+      <div id="roomCode" class="room-code"></div>
+    </div>
+    <div class="lobby-side">
+      <h2>Players <span id="playerCount" class="muted"></span></h2>
+      <ul id="lobbyPlayers" class="lobby-players"></ul>
+      <div class="setting">
+        <span>Turn timer</span>
+        <div id="timerOptions" class="seg" role="radiogroup" aria-label="Turn timer"></div>
+      </div>
+      <button id="startBtn" class="btn primary big" disabled>Start game</button>
+      <p id="lobbyHint" class="muted small"></p>
+      <button id="resetBtn" class="btn ghost small-btn">New table (new code)</button>
+    </div>
+  </section>
+
+  <section id="game" class="game" hidden>
+    <aside class="sidebar">
+      <div class="side-top">
+        <div class="logo small">Tile Rummy</div>
+        <div class="side-code">Room <b id="sideCode"></b></div>
+      </div>
+      <ul id="players" class="players"></ul>
+      <div class="pool">
+        <div class="pool-stack" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div><b id="poolCount">0</b><span>tiles to draw</span></div>
+      </div>
+      <button id="menuBtn" class="btn ghost small-btn">Back to lobby…</button>
+    </aside>
+    <main id="board" class="board">
+      <div class="board-head">
+        <div id="turnName" class="turn-name"></div>
+        <div id="turnClock" class="turn-clock" hidden></div>
+      </div>
+      <div id="boardInner" class="board-inner"></div>
+      <div id="banner" class="banner" aria-live="polite"></div>
+    </main>
+    <div id="netStatus" class="net-status" hidden></div>
+  </section>
+
+  <div id="roundOver" class="overlay" hidden>
+    <div class="overlay-card">
+      <h2 id="roWinner"></h2>
+      <p id="roReason" class="muted"></p>
+      <table class="scores">
+        <thead><tr><th>Player</th><th>Left in rack</th><th>This round</th><th>Total</th></tr></thead>
+        <tbody id="roRows"></tbody>
+      </table>
+      <div class="overlay-actions">
+        <button id="nextRoundBtn" class="btn primary big">Next round</button>
+        <button id="toLobbyBtn" class="btn ghost">Back to lobby</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="../js/table/main.js"></script>
+</body>
+</html>

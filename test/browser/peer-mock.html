@@ -1,0 +1,92 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>PeerJS wrapper check</title>
+<!-- Exercises js/net/room.js over peerTransport() with an in-memory fake of
+     the PeerJS API, so the wrapper logic can be checked without a broker.
+     Open via the dev server; the result is printed into the page. -->
+<pre id="out">running…</pre>
+<script>
+  // Minimal in-memory stand-in for PeerJS's Peer / DataConnection.
+  const registry = new Map();
+  class FakeConn {
+    constructor(peer) { this.peer = peer; this.h = {}; this.open = false; this.other = null; }
+    on(ev, fn) { (this.h[ev] ||= []).push(fn); }
+    fire(ev, ...a) { (this.h[ev] || []).forEach((f) => f(...a)); }
+    send(d) { if (!this.open) return; const o = this.other; setTimeout(() => o.fire('data', JSON.parse(JSON.stringify(d))), 1); }
+    close() { if (!this.open) return; this.open = false; this.other.open = false; setTimeout(() => { this.fire('close'); this.other.fire('close'); }, 1); }
+  }
+  let n = 0;
+  window.Peer = class {
+    constructor(id, opts) {
+      if (typeof id !== 'string') id = 'anon' + (++n);
+      this.id = id; this.h = {}; this.destroyed = false; this.disconnected = false;
+      setTimeout(() => {
+        if (registry.has(id)) return this.fire('error', { type: 'unavailable-id' });
+        registry.set(id, this); this.fire('open', id);
+      }, 5);
+    }
+    on(ev, fn) { (this.h[ev] ||= []).push(fn); }
+    fire(ev, ...a) { (this.h[ev] || []).forEach((f) => f(...a)); }
+    connect(id) {
+      const c = new FakeConn(this);
+      setTimeout(() => {
+        const host = registry.get(id);
+        if (!host) return this.fire('error', { type: 'peer-unavailable' });
+        const s = new FakeConn(host); c.other = s; s.other = c; c.open = s.open = true;
+        host.fire('connection', s); s.fire('open'); c.fire('open');
+      }, 5);
+      return c;
+    }
+    reconnect() {}
+    destroy() { this.destroyed = true; if (registry.get(this.id) === this) registry.delete(this.id); }
+  };
+</script>
+<script type="module">
+  import { hostRoom, joinRoom } from '../../js/net/room.js';
+  import { peerTransport } from '../../js/net/transports.js';
+  const out = document.getElementById('out');
+  const log = [];
+  const check = (name, ok) => log.push(`${ok ? 'PASS' : 'FAIL'} ${name}`);
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  try {
+    const t = peerTransport();
+    const host = await hostRoom({ appId: 'mock', code: 'ABCD', transport: t, accept: (id, h) => (h.name === 'Bad' ? 'nope' : true) });
+    check('host claimed requested code', host.code === 'ABCD');
+    const joins = [];
+    host.on('join', (id, hello, info) => joins.push({ id, hello, info }));
+    const got = [];
+    host.on('message', (id, m) => got.push(m));
+    const c = joinRoom({ appId: 'mock', code: 'abcd', hello: { name: 'Ana' }, transport: t, slot: 'mock1' });
+    const msgs = [];
+    c.on('message', (m) => msgs.push(m));
+    await wait(200);
+    check('client connected', c.status === 'connected');
+    check('host saw join with hello', joins[0]?.hello?.name === 'Ana' && joins[0].info.rejoin === false);
+    c.send({ hi: 1 });
+    host.send(c.clientId, { yo: 2 });
+    await wait(50);
+    check('client -> host message', got[0]?.hi === 1);
+    check('host -> client message', msgs[0]?.yo === 2);
+    // Drop the link: client should reconnect with the same id and be seen as a rejoin.
+    const leaves = [];
+    host.on('leave', (id) => leaves.push(id));
+    c.reconnect();
+    await wait(300);
+    check('rejoin keeps the same client id', joins[1]?.id === joins[0].id && joins[1].info.rejoin === true);
+    check('still connected after rejoin', c.status === 'connected' && host.isConnected(c.clientId));
+    const bad = joinRoom({ appId: 'mock', code: 'ABCD', hello: { name: 'Bad' }, transport: t, slot: 'mock2' });
+    await wait(200);
+    check('host can reject', bad.status === 'rejected');
+    const second = hostRoom({ appId: 'mock', code: 'ABCD', transport: t });
+    const race = await Promise.race([second.then((r) => r.code), wait(400).then(() => 'still-waiting')]);
+    check('taken code is retried, not stolen', race === 'still-waiting');
+    const ghost = joinRoom({ appId: 'mock', code: 'ZZZZ', hello: { name: 'X' }, transport: t, slot: 'mock3' });
+    await wait(300);
+    check('missing room does not connect', ghost.status !== 'connected');
+    ghost.close();
+  } catch (e) {
+    log.push('ERROR ' + e.stack);
+  }
+  out.textContent = log.join('\n');
+  document.title = log.some((l) => !l.startsWith('PASS')) ? 'FAIL' : 'PASS';
+</script>

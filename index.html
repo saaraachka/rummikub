@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tile Rummy</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/common.css">
+  <style>
+    body { display: grid; place-items: center; min-height: 100%; padding: 24px; }
+    main { max-width: 640px; width: 100%; display: grid; gap: 20px; }
+    h1 { margin: 0; font-size: 44px; font-weight: 900; letter-spacing: -0.02em; }
+    p { color: var(--ink-dim); font-size: 18px; line-height: 1.5; margin: 0; }
+    .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 8px; }
+    .choice { display: grid; gap: 6px; padding: 22px; border-radius: 18px; background: rgba(0,0,0,.25); color: var(--ink); text-decoration: none; }
+    .choice b { font-size: 22px; }
+    .choice span { color: var(--ink-dim); }
+    .choice.primary { background: var(--accent); color: #1c1a10; }
+    .choice.primary span { color: #5a4d12; }
+    .dev { font-size: 15px; }
+    .dev a { color: var(--ink); }
+    @media (max-width: 520px) { .choices { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Tile Rummy</h1>
+    <p>A tile-rummy game for the living room. One screen (an iPad, a laptop, a TV) is the shared table. Everyone plays from their own phone.</p>
+    <div class="choices">
+      <a class="choice primary" href="table/"><b>Open the table</b><span>On the big screen. Shows a QR code to join.</span></a>
+      <a class="choice" href="play/"><b>Join on a phone</b><span>Enter the 4-letter room code.</span></a>
+    </div>
+    <p class="dev">Trying it out alone? <a href="dev.html">Open the test bench</a>: a table and four phones on one page, no network needed.</p>
+  </main>
+</body>
+</html>
