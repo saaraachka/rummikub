@@ -2,7 +2,10 @@
 // sends, keeps a private working copy of the board during your turn, and
 // sends the finished board to the table for validation.
 
-import { APP_ID, peerOptions } from '../config.js';
+import { APP_ID, SOUNDS, SITE_ROOT, peerOptions } from '../config.js';
+import { createSoundPlayer } from '../audio/player.js';
+import { phoneCues, commitCue, pickupCue, editCue } from '../audio/cues.js';
+import { createHaptics } from '../ui/haptics.js';
 import { transportFromUrl } from '../net/transports.js';
 import { diagnose } from './diagnose.js';
 import { joinRoom, normalizeCode } from '../net/room.js';
@@ -15,6 +18,21 @@ const slot = params.get('slot') || ''; // lets several tabs in one browser be di
 const SESSION_KEY = `${APP_ID}:session${slot ? ':' + slot : ''}`;
 const NAME_KEY = `${APP_ID}:name${slot ? ':' + slot : ''}`;
 const $ = (id) => document.getElementById(id);
+
+// Sound + haptics. Both remember their on/off setting per device.
+const sfx = createSoundPlayer({ manifest: SOUNDS, baseUrl: SITE_ROOT, where: 'phone', storageKey: `${APP_ID}:sound:phone` });
+const haptics = createHaptics({ storageKey: `${APP_ID}:haptics` });
+/** Play a cue from js/audio/cues.js: sound, haptic pattern, and the full-screen "your turn" flash. */
+function cue(c) {
+  if (!c) return;
+  sfx.play(c.sound, { delay: c.delay ?? 0 });
+  if (c.haptic) haptics.fire(c.haptic);
+  if (c.flash) flashYourTurn();
+}
+// Browsers keep audio locked until a tap. The Join button counts; so does the
+// first touch anywhere (for phones that rejoin automatically after a refresh).
+const unlockAudio = () => sfx.unlock();
+window.addEventListener('pointerdown', unlockAudio, { once: true, capture: true });
 
 let conn = null;
 let S = null; // latest snapshot from the table
@@ -59,6 +77,7 @@ function initJoin() {
     const name = $('nameInput').value.trim();
     if (code.length !== 4) return ($('joinError').textContent = 'Room codes are 4 letters.');
     if (!name) return ($('joinError').textContent = 'Enter your name.');
+    unlockAudio();
     start(code, name);
   });
   $('codeInput').addEventListener('input', (e) => (e.target.value = normalizeCode(e.target.value)));
@@ -154,11 +173,12 @@ function onMessage(msg) {
     remainingAtReceipt = msg.turnRemainingMs;
     syncWork(prev);
     render();
+    for (const c of phoneCues(prev, S)) cue(c);
   } else if (msg.type === 'commitResult') {
     pending = false;
+    cue(commitCue(msg.ok));
     if (!msg.ok) {
       errors = msg.errors || [];
-      navigator.vibrate?.([30, 60, 30]);
     } else {
       errors = [];
     }
@@ -183,7 +203,6 @@ function syncWork(prev) {
       selected = null;
       pending = false;
       if (prev) {
-        navigator.vibrate?.(120);
         const g = $('game');
         g.classList.remove('turn-start');
         void g.offsetWidth;
@@ -276,6 +295,14 @@ function moveTile(id, dest) {
   drawArmed = false;
   if (dest.zone === 'rack' && from.zone === 'rack') sendRackOrder(work.rack);
   return true;
+}
+
+/** moveTile plus the matching drop / snap / set-became-invalid cue. */
+function moveWithCue(id, dest) {
+  const before = boardSets().map((x) => x.slice());
+  const moved = moveTile(id, dest);
+  if (moved) cue(editCue(before, boardSets()));
+  return moved;
 }
 
 function splitAt(id) {
@@ -389,7 +416,7 @@ window.addEventListener('pointerup', (e) => {
   drag = null;
   if (d.active) {
     endDrag(d);
-    if (target && moveTile(d.id, target)) selected = null;
+    if (target && moveWithCue(d.id, target)) selected = null;
     render();
   } else {
     onTapTile(d.id);
@@ -415,6 +442,7 @@ function beginDrag() {
   drag.w = r.width;
   drag.h = r.height;
   drag.el.classList.add('drag-src');
+  cue(pickupCue());
   autoScroll();
 }
 
@@ -493,12 +521,15 @@ function showTarget(t) {
 function onTapTile(id) {
   if (pending || !S) return;
   if (!selected) {
-    if (canDrag(id)) selected = id;
+    if (canDrag(id)) {
+      selected = id;
+      cue(pickupCue());
+    }
   } else if (selected === id) {
     selected = null;
   } else {
     const loc = locate(id);
-    if (loc) moveTile(selected, loc.zone === 'set' ? { zone: 'set', set: loc.set, index: loc.index } : { zone: 'rack', index: loc.index });
+    if (loc) moveWithCue(selected, loc.zone === 'set' ? { zone: 'set', set: loc.set, index: loc.index } : { zone: 'rack', index: loc.index });
     selected = null;
   }
   render();
@@ -513,14 +544,18 @@ game.addEventListener('click', (e) => {
   else if (e.target.closest('.set[data-set]')) dest = { zone: 'set', set: Number(e.target.closest('.set').dataset.set) };
   else if (e.target.closest('#rackArea')) dest = { zone: 'rack' };
   if (!dest) return;
-  moveTile(selected, dest);
+  moveWithCue(selected, dest);
   selected = null;
   render();
 });
 $('info').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-act]');
   if (!b) return;
-  if (b.dataset.act === 'split') splitAt(selected);
+  if (b.dataset.act === 'split') {
+    const before = boardSets().map((x) => x.slice());
+    splitAt(selected);
+    cue(editCue(before, boardSets()));
+  }
   selected = null;
   render();
 });
@@ -661,5 +696,53 @@ document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: fals
 document.addEventListener('touchmove', (e) => {
   if (e.touches.length > 1) e.preventDefault();
 }, { passive: false });
+
+// ------------------------------------------------------------------ your-turn flash & settings
+
+let flashTimer2 = null;
+/** Full-screen flash + big banner, so "your turn" is obvious even when muted. */
+function flashYourTurn() {
+  const f = $('turnFlash');
+  f.hidden = false;
+  f.classList.remove('go');
+  void f.offsetWidth;
+  f.classList.add('go');
+  clearTimeout(flashTimer2);
+  flashTimer2 = setTimeout(() => (f.hidden = true), 1900);
+}
+
+function renderToggles() {
+  for (const b of document.querySelectorAll('[data-toggle="sound"]')) {
+    b.setAttribute('aria-pressed', String(!sfx.muted));
+    b.classList.toggle('off', sfx.muted);
+    b.title = sfx.muted ? 'Sound off' : 'Sound on';
+    const label = b.querySelector('.lbl');
+    if (label) label.textContent = sfx.muted ? 'Sound off' : 'Sound on';
+  }
+  for (const b of document.querySelectorAll('[data-toggle="haptics"]')) {
+    b.setAttribute('aria-pressed', String(haptics.enabled));
+    b.classList.toggle('off', !haptics.enabled);
+    b.title = haptics.enabled ? 'Vibration on' : 'Vibration off';
+    const label = b.querySelector('.lbl');
+    if (label) label.textContent = haptics.enabled ? 'Vibration on' : 'Vibration off';
+  }
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-toggle]');
+  if (!b) return;
+  if (b.dataset.toggle === 'sound') {
+    sfx.setMuted(!sfx.muted);
+    unlockAudio();
+    if (!sfx.muted) sfx.play('drop');
+  } else {
+    haptics.setEnabled(!haptics.enabled);
+    haptics.fire('tick');
+  }
+  renderToggles();
+});
+renderToggles();
+
+// Test hook for the offline bench / automated tests only.
+if (params.get('net') === 'local') window.__phone = { sfx, haptics };
 
 initJoin();

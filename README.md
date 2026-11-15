@@ -51,6 +51,48 @@ Open the table with `?bots=N` (N = 2–4), for example `…/table/?bots=4`, to w
 
 `think=…` also works on a normal table, for example to make bots snappier while you test with one phone.
 
+## Sound and haptics
+
+The table plays sounds through the iPad (and so the TV over AirPlay). Each phone plays only the sounds that concern its player, plus haptics.
+
+- **Turning sound on.** Browsers, iOS especially, keep audio locked until someone taps. On the table, the first tap anywhere enables sound (Start game counts), and the bottom-right corner shows **Tap to enable sound** until then. On phones, the Join button enables it, and after a refresh any first tap does. On Safari versions that support it, the game asks to be treated as media playback (`navigator.audioSession.type = "playback"`), so sounds play even with the iPhone's silent switch on.
+- **Controls.** The table has a mute button and a volume slider in the bottom-right corner. Phones have sound and vibration toggles in the top bar and in the lobby. All of these are remembered on each device.
+- **Haptics.** Android uses `navigator.vibrate()`. On iPhone (Safari 17.4+) the game uses the hidden `<input type="checkbox" switch>` trick, which fires the system haptic tick. iOS may only allow that during a tap, so the "your turn" buzz is a bonus there. The game doesn't rely on it: the phone also plays the turn sound, flashes the whole screen yellow, and shows a big "Your turn" banner, which works even when muted. Devices with neither just skip haptics silently.
+  - Picking up or dropping a tile: a short tick
+  - Commit accepted: a double pulse
+  - Commit rejected: a triple pulse
+  - Your turn: a longer pattern
+
+### Using your own samples
+
+Every sound is a separate short file in `/sounds`, listed once in the `SOUNDS` manifest in `js/config.js`. To swap one, replace the file, or drop in a new file and point the slot's `file` at it. Each slot also has a `volume` (0–1, applied before the table's master volume), and two slots can share one file. mp3, m4a/AAC and wav all work everywhere; avoid ogg, which Safari can't decode. Trim the start tight, since sounds fire the instant the event happens.
+
+If a file is missing or can't be decoded, that slot quietly falls back to a built-in synthesized placeholder (`js/audio/synth.js`), so a typo never silences the game. The files currently in `/sounds` were rendered from those same recipes by `npm run sounds`. That command only fills in missing files; `node scripts/make-sounds.js --force` re-renders all of them, and would overwrite your samples. To check that your files are being used rather than the fallback, tap to enable sound on the table, then run `__sounds.sources()` in the browser console; it lists `file` or `synth` for each table slot.
+
+| Slot | File | Where | Plays when | Intended feel |
+|---|---|---|---|---|
+| `gameStart` | `game-start.mp3` | table | a round is dealt | Short, bright "let's go" flourish, under a second |
+| `turnStart` | `turn-start.mp3` | table | a new turn begins (human or bot) | Friendly two-note chime, clearly different from everything else; you'll hear it every turn, so keep it gentle |
+| `place` | `place.mp3` | table | a turn is committed (tiles placed) | Tactile clack of tiles on a table; short and satisfying |
+| `draw` | `draw.mp3` | table | a player draws (or times out and draws) | Soft slide/swish of a tile off the pile |
+| `invalid` | `invalid.mp3` | table | the table rejects a move | Gentle "nope", two descending notes; noticeable, not harsh |
+| `roundWon` | `round-won.mp3` | table | someone goes out / wins the round | Celebratory, 1–1.5 s, the biggest sound in the game |
+| `timerWarning` | `timer-warning.mp3` | table | 10 seconds left on the turn timer | Two quick ticks, urgent but not alarming |
+| `playerJoin` | `player-join.mp3` | table | someone (or a bot) joins the lobby | Quick upward blip |
+| `playerLeave` | `player-leave.mp3` | table | someone leaves the lobby | Quick downward blip, softer than join |
+| `yourTurn` | `your-turn.mp3` | phone | it becomes your turn | The most important sound: bright, distinct, audible from a pocket; under a second |
+| `pickup` | `pickup.mp3` | phone | you pick up or select a tile | Tiny, high, almost subliminal tick |
+| `drop` | `drop.mp3` | phone | you drop a tile somewhere | Soft low click |
+| `snap` | `snap.mp3` | phone | a drop completes a valid set | Click plus a short pleasant tone: "that fits" |
+| `setInvalid` | `set-invalid.mp3` | phone | a drop breaks a valid set | Subtle low thud; a hint, not a scold |
+| `commitOk` | `commit-ok.mp3` | phone | the table accepts your turn | Upbeat two-note confirmation |
+| `commitError` | `commit-error.mp3` | phone | the table rejects your turn | Low two-note buzz, clearly "try again" |
+| `drew` | `drew.mp3` | phone | you drew a tile | Soft swish with a little sparkle |
+| `won` | `won.mp3` | phone | you won the round | Celebration; can share a file with `roundWon` |
+| `roundOver` | `round-over.mp3` | phone | someone else won the round | Gentle descending "that's the round" |
+
+Which event triggers which sound is decided in `js/audio/cues.js` (pure, unit-tested). Bots trigger exactly the same table sounds as people.
+
 ## Deploying to GitHub Pages
 
 The repository root is the site, so there is nothing to build.
@@ -67,7 +109,8 @@ All paths are relative, so it works under any repository name or a custom domain
 You need Node.js 18 or newer. There are no dependencies to install.
 
 ```sh
-npm test            # rules, engine, bot and connection-message tests, plus a 300-game bot simulation (~30 s)
+npm test            # rules, engine, bot, sound/haptics and connection tests, plus a 300-game bot simulation (~30 s)
+npm run sounds      # render any missing files in /sounds from the built-in placeholder recipes
 npm run serve       # static server on http://localhost:8080 (any port: node scripts/serve.js 3000)
 ```
 
@@ -101,7 +144,7 @@ Drop `net=local` to test the real PeerJS path between tabs (internet required). 
 index.html            landing page
 table/  play/         the two entry points
 dev.html              offline test bench
-js/config.js          game name, app id, and WebRTC STUN/TURN servers
+js/config.js          game name, app id, WebRTC STUN/TURN servers, and the sound manifest
 js/game/tiles.js      tile ids, deck, shuffle, sorting           (pure)
 js/game/rules.js      set analysis, joker handling, turn check   (pure)
 js/game/engine.js     state machine: deal, commit, draw, score   (pure)
@@ -113,6 +156,12 @@ js/play/diagnose.js   connection status -> the message on the phone's join scree
 js/bot/search.js      bot move search: set packing, table moves, Easy/Normal (pure)
 js/bot/worker.js      Web Worker wrapper for the search
 js/bot/runner.js      table-side runner with the hard time limit
+js/audio/cues.js      which event plays which sound / haptic, table vs phone (pure)
+js/audio/player.js    Web Audio playback: preloaded buffers, mute/volume, iOS unlock, synth fallback
+js/audio/synth.js     placeholder sound recipes (also used to render /sounds)
+js/ui/haptics.js      vibrate() / iOS switch haptics, feature-detected
+sounds/               one short file per sound slot (see "Sound and haptics")
+scripts/make-sounds.js  renders missing sound files from the synth recipes
 js/ui/tile-view.js    tile markup shared by both screens
 vendor/               PeerJS 1.5.5 and qrcode-generator 2.0.4 (both MIT)
 test/                 unit tests and the browser check page

@@ -2,7 +2,9 @@
 // every move with the pure engine, and sends each phone a snapshot of the
 // public state plus that phone's own rack.
 
-import { APP_ID, peerOptions } from '../config.js';
+import { APP_ID, SOUNDS, SITE_ROOT, peerOptions } from '../config.js';
+import { createSoundPlayer } from '../audio/player.js';
+import { tableCues, timerCue } from '../audio/cues.js';
 import { hostRoom } from '../net/room.js';
 import { transportFromUrl } from '../net/transports.js';
 import {
@@ -198,7 +200,18 @@ function commit({ broadcast }) {
   if (WATCH && game.phase === 'roundOver') scheduleWatchNextRound();
 }
 
+let lastLeft = Infinity;
+let lastLeftTurn = -1;
 function tick() {
+  if (deadline && game.phase === 'playing') {
+    if (lastLeftTurn !== deadlineTurn) {
+      lastLeftTurn = deadlineTurn;
+      lastLeft = Infinity;
+    }
+    const left = deadline - Date.now();
+    for (const c of timerCue(lastLeft, left)) sfx.play(c.sound);
+    lastLeft = left;
+  }
   if (deadline && game.phase === 'playing' && Date.now() >= deadline) {
     const pid = currentPlayerId(game);
     game = drawTile(game, pid, 'timeout').state;
@@ -248,6 +261,7 @@ function setupLobbyControls() {
 
   $('startBtn').addEventListener('click', () => {
     requestWakeLock();
+    enableSound();
     game = startRound(game);
     commit({ broadcast: true });
   });
@@ -324,8 +338,59 @@ document.addEventListener('click', requestWakeLock, { once: true });
 
 // ------------------------------------------------------------------ render
 
+// ------------------------------------------------------------------ sound
+
+// Sounds follow the public state, so bot turns sound exactly like human ones.
+const sfx = createSoundPlayer({ manifest: SOUNDS, baseUrl: SITE_ROOT, where: 'table', storageKey: `${APP_ID}:sound:table` });
+let lastSoundView = null;
+
+function playCues(v) {
+  for (const c of tableCues(lastSoundView, v)) sfx.play(c.sound, { delay: c.delay ?? 0 });
+  lastSoundView = v;
+}
+
+async function enableSound() {
+  await sfx.unlock();
+  renderSoundCtl();
+}
+
+function renderSoundCtl() {
+  const ctl = $('soundCtl');
+  ctl.classList.toggle('locked', !sfx.unlocked);
+  ctl.classList.toggle('muted', sfx.unlocked && sfx.muted);
+  $('soundBtn').title = !sfx.unlocked ? 'Enable sound' : sfx.muted ? 'Unmute' : 'Mute';
+  $('volume').value = String(sfx.volume);
+}
+
+$('soundBtn').addEventListener('click', async () => {
+  if (!sfx.unlocked) {
+    // "Tap to enable sound": unlock and make sure it's audible.
+    await enableSound();
+    sfx.setMuted(false);
+  } else {
+    sfx.setMuted(!sfx.muted);
+  }
+  renderSoundCtl();
+  sfx.play('turnStart');
+});
+$('volume').addEventListener('input', (e) => sfx.setVolume(Number(e.target.value)));
+$('volume').addEventListener('change', () => sfx.play('place'));
+// Any first tap on the iPad unlocks audio (iOS requires a gesture). A tap on
+// the sound button itself is left to its own handler, so it doesn't unlock
+// and then immediately toggle mute.
+function firstTap(e) {
+  if (e.target.closest?.('#soundBtn')) return;
+  window.removeEventListener('pointerdown', firstTap, true);
+  enableSound();
+}
+window.addEventListener('pointerdown', firstTap, true);
+renderSoundCtl();
+// For checking your own samples: run __sounds.sources() in the browser console.
+window.__sounds = sfx;
+
 function render() {
   const v = publicView(game);
+  playCues(v);
   $('lobby').hidden = v.phase !== 'lobby';
   $('game').hidden = v.phase === 'lobby';
   $('roundOver').hidden = v.phase !== 'roundOver';
@@ -582,6 +647,7 @@ if (params.get('net') === 'local' || WATCH) {
   window.__host = {
     get game() { return game; },
     set game(g) { game = g; commit({ broadcast: true }); },
+    sfx,
   };
 }
 

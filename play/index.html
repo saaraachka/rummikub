@@ -38,6 +38,10 @@
       <p id="waitText" class="muted"></p>
       <ul id="waitPlayers" class="wait-players"></ul>
       <p id="waitDiag" class="diag" role="status" aria-live="polite" hidden><span class="dot"></span><span></span></p>
+      <div class="settings-row">
+        <button class="chip" data-toggle="sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path class="wave" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span class="lbl">Sound on</span></button>
+        <button class="chip" data-toggle="haptics"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="3" width="8" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path class="wave" d="M4.5 8v8M1.8 10v4M19.5 8v8M22.2 10v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span class="lbl">Vibration on</span></button>
+      </div>
       <button id="leaveBtn" class="btn ghost">Leave</button>
     </div>
   </section>
@@ -49,6 +53,8 @@
       <div class="turn"><b id="turnText"></b><span id="subText" class="muted"></span></div>
       <span id="timer" class="timer" hidden></span>
       <span class="pool-pill" title="Tiles left to draw"><i></i><b id="poolCount">0</b></span>
+      <button class="icon-btn" data-toggle="sound" aria-label="Sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path class="wave" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+      <button class="icon-btn" data-toggle="haptics" aria-label="Vibration"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="3" width="8" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path class="wave" d="M4.5 8v8M1.8 10v4M19.5 8v8M22.2 10v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
     </header>
     <div id="offline" class="offline" hidden role="status" aria-live="polite">Reconnecting… your rack is safe.</div>
 
@@ -85,6 +91,7 @@
     </div>
   </section>
 
+  <div id="turnFlash" class="turn-flash" hidden aria-hidden="true"><div class="turn-flash-banner">Your turn</div></div>
   <div id="caret" class="caret" hidden></div>
   <script type="module" src="../js/play/main.js"></script>
 </body>

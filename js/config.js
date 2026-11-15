@@ -62,3 +62,44 @@ export function peerOptions(search = location.search) {
     },
   };
 }
+
+// ---------------------------------------------------------------- Sounds
+//
+// Every sound the game makes. To use your own sample, drop a file into
+// /sounds and point the slot's `file` at it (mp3, m4a/aac, wav and ogg all
+// work in modern browsers; Safari can't decode ogg, so prefer mp3, m4a or wav).
+// Two slots can share one file. `volume` is 0–1, applied before the master volume.
+// If a file is missing or can't be decoded, the game falls back to a built-in
+// synthesized placeholder (js/audio/synth.js) for that slot, so nothing breaks.
+// Keep samples short and trimmed tight at the start: they're played the
+// instant the event happens. The README describes the intended feel of each slot.
+//
+// `where` says which screen plays it: 'table' (iPad/TV) or 'phone' (only the
+// player it concerns).
+
+/** Sound file paths above are relative to the site root (the folder holding index.html). */
+export const SITE_ROOT = new URL('../', import.meta.url).href;
+
+export const SOUNDS = {
+  // Table
+  gameStart:    { where: 'table', file: 'sounds/game-start.mp3',    volume: 0.8 },
+  turnStart:    { where: 'table', file: 'sounds/turn-start.mp3',    volume: 0.7 },
+  place:        { where: 'table', file: 'sounds/place.mp3',         volume: 0.9 },
+  draw:         { where: 'table', file: 'sounds/draw.mp3',          volume: 0.7 },
+  invalid:      { where: 'table', file: 'sounds/invalid.mp3',       volume: 0.7 },
+  roundWon:     { where: 'table', file: 'sounds/round-won.mp3',     volume: 0.9 },
+  timerWarning: { where: 'table', file: 'sounds/timer-warning.mp3', volume: 0.7 },
+  playerJoin:   { where: 'table', file: 'sounds/player-join.mp3',   volume: 0.6 },
+  playerLeave:  { where: 'table', file: 'sounds/player-leave.mp3',  volume: 0.5 },
+  // Phone
+  yourTurn:     { where: 'phone', file: 'sounds/your-turn.mp3',     volume: 1.0 },
+  pickup:       { where: 'phone', file: 'sounds/pickup.mp3',        volume: 0.5 },
+  drop:         { where: 'phone', file: 'sounds/drop.mp3',          volume: 0.6 },
+  snap:         { where: 'phone', file: 'sounds/snap.mp3',          volume: 0.7 },
+  setInvalid:   { where: 'phone', file: 'sounds/set-invalid.mp3',   volume: 0.4 },
+  commitOk:     { where: 'phone', file: 'sounds/commit-ok.mp3',     volume: 0.8 },
+  commitError:  { where: 'phone', file: 'sounds/commit-error.mp3',  volume: 0.7 },
+  drew:         { where: 'phone', file: 'sounds/drew.mp3',          volume: 0.6 },
+  won:          { where: 'phone', file: 'sounds/won.mp3',           volume: 0.9 },
+  roundOver:    { where: 'phone', file: 'sounds/round-over.mp3',    volume: 0.7 },
+};
