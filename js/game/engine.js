@@ -8,7 +8,7 @@ import { validateTurn } from './rules.js';
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 4;
 export const RACK_SIZE = 14;
-export const TIMER_OPTIONS = [0, 60, 120];
+export const TIMER_OPTIONS = [0, 30, 60, 120];
 
 const clone = (x) => structuredClone(x);
 const multisetKey = (ids) => [...ids].sort().join(',');
@@ -16,7 +16,7 @@ const multisetKey = (ids) => [...ids].sort().join(',');
 export function createGame() {
   return {
     phase: 'lobby', // lobby | playing | roundOver
-    settings: { timer: 0, strictJokers: true },
+    settings: { timer: 0, pendingTimer: null, strictJokers: true },
     players: [], // [{id, name, score, bot?: 'easy'|'normal'}]
     round: 0,
     pool: [],
@@ -73,10 +73,68 @@ export function removePlayer(state, id) {
   return s;
 }
 
+/**
+ * Set the turn timer (seconds; 0 = off).
+ *   Lobby or between rounds: applies right away.
+ *   During a round: applies when the NEXT turn starts, so nobody is cut off
+ *   mid-move. Turning the timer off is the exception: it stops the current
+ *   countdown immediately, since that never hurts anyone.
+ * Records a 'timerChange' event ({timer, when: 'now' | 'nextTurn'}) for the screens.
+ */
 export function setTimer(state, seconds) {
   if (!TIMER_OPTIONS.includes(seconds)) throw new Error('Bad timer');
   const s = clone(state);
-  s.settings.timer = seconds;
+  let when = 'now';
+  if (s.phase !== 'playing' || seconds === 0) {
+    s.settings.timer = seconds;
+    s.settings.pendingTimer = null;
+  } else if (seconds === s.settings.timer) {
+    s.settings.pendingTimer = null; // changed back before it took effect
+  } else {
+    s.settings.pendingTimer = seconds;
+    when = 'nextTurn';
+  }
+  event(s, { type: 'timerChange', timer: seconds, when });
+  return s;
+}
+
+/** "Off", "30s", "1 min", "2 min". */
+export const timerLabel = (seconds) => (!seconds ? 'Off' : seconds < 60 ? `${seconds}s` : `${seconds / 60} min`);
+
+/** The timer that will be running once any pending change applies. */
+export const effectiveTimer = (state) => state.settings.pendingTimer ?? state.settings.timer;
+
+function applyPendingTimer(s) {
+  if (s.settings.pendingTimer != null) {
+    s.settings.timer = s.settings.pendingTimer;
+    s.settings.pendingTimer = null;
+  }
+}
+
+/**
+ * The turn countdown, as a pure function of the game. `prev` is the last
+ * clock ({turnNumber, deadline, total}) or null; `now` is a ms timestamp.
+ * A new deadline is set once per turn; it's cleared as soon as the timer is
+ * off or the round isn't being played.
+ */
+export function turnClock(prev, state, now) {
+  const timer = state.settings.timer;
+  if (state.phase !== 'playing' || !timer) return { turnNumber: state.turnNumber, deadline: 0, total: 0 };
+  if (prev && prev.turnNumber === state.turnNumber) return prev;
+  return { turnNumber: state.turnNumber, deadline: now + timer * 1000, total: timer * 1000 };
+}
+
+/**
+ * Bring a saved game up to date with the current state shape. Games saved
+ * before a setting existed keep the timer they started with and get sensible
+ * defaults for anything new.
+ */
+export function restoreGame(saved) {
+  const s = clone(saved);
+  s.settings ||= {};
+  if (!TIMER_OPTIONS.includes(s.settings.timer)) s.settings.timer = 0;
+  if (!TIMER_OPTIONS.includes(s.settings.pendingTimer)) s.settings.pendingTimer = null;
+  if (typeof s.settings.strictJokers !== 'boolean') s.settings.strictJokers = true;
   return s;
 }
 
@@ -117,6 +175,7 @@ export function startRound(state, seed = (Math.random() * 2 ** 32) >>> 0) {
   s.turnNumber += 1;
   s.passesInRow = 0;
   s.result = null;
+  applyPendingTimer(s);
   event(s, { type: 'roundStart' });
   return s;
 }
@@ -150,6 +209,7 @@ function assertTurn(state, playerId) {
 function nextTurn(s) {
   s.turn = (s.turn + 1) % s.players.length;
   s.turnNumber += 1;
+  applyPendingTimer(s);
 }
 
 /**
@@ -281,7 +341,7 @@ function endRound(s, winnerId, reason) {
 export function publicView(state) {
   return {
     phase: state.phase,
-    settings: { ...state.settings, strictJokers: strictJokersOn(state) },
+    settings: { ...state.settings, pendingTimer: state.settings.pendingTimer ?? null, strictJokers: strictJokersOn(state) },
     round: state.round,
     players: state.players.map((p) => ({
       id: p.id,

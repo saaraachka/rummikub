@@ -11,6 +11,7 @@ import { diagnose } from './diagnose.js';
 import { joinRoom, normalizeCode } from '../net/room.js';
 import { analyzeSet, meldPointsFromRack, INITIAL_MELD_POINTS } from '../game/rules.js';
 import { sortByColor, sortByNumber } from '../game/tiles.js';
+import { timerLabel } from '../game/engine.js';
 import { tileHtml, escapeHtml, BOT_ICON } from '../ui/tile-view.js';
 
 const params = new URLSearchParams(location.search);
@@ -174,6 +175,12 @@ function onMessage(msg) {
     syncWork(prev);
     render();
     for (const c of phoneCues(prev, S)) cue(c);
+    const ev = S.lastEvent;
+    if (prev && ev?.type === 'timerChange' && ev.seq !== prev.lastEvent?.seq && S.phase === 'playing') {
+      notice(ev.when === 'nextTurn'
+        ? `The table set the timer to ${timerLabel(ev.timer)}. It starts next turn.`
+        : ev.timer ? `The table set the timer to ${timerLabel(ev.timer)}.` : 'The table turned the timer off.');
+    }
   } else if (msg.type === 'commitResult') {
     pending = false;
     cue(commitCue(msg.ok));
@@ -577,6 +584,8 @@ function render() {
   $('subText').textContent = mine
     ? (pending ? 'Checking with the table…' : S.hasMelded ? 'Play tiles, then commit' : `First meld: ${INITIAL_MELD_POINTS}+ points from your rack`)
     : `You're ${nameOf(S.you)} · ${S.hasMelded ? 'melded' : 'no meld yet'}`;
+  const pend = S.settings.pendingTimer;
+  if (pend != null) $('subText').textContent += ` · timer ${timerLabel(pend)} from next turn`;
   $('poolCount').textContent = S.poolCount;
   renderBoard();
   renderRack();
@@ -670,7 +679,7 @@ function renderLobby() {
   $('waitIcon').className = 'spinner done';
   $('waitTitle').textContent = `You're in, ${nameOf(S.you)}!`;
   const t = S.settings.timer;
-  $('waitText').textContent = `Waiting for the table to start the game.${t ? ` Turn timer: ${t / 60} min.` : ''}` +
+  $('waitText').textContent = `Waiting for the table to start the game.${t ? ` Turn timer: ${timerLabel(t)}.` : ''}` +
     (S.settings.strictJokers ? ' Strict joker rule: take a table joker only by swapping in the exact tile.' : ' Jokers on the table can be moved freely.');
   $('waitPlayers').innerHTML = playersList((p) => (p.score ? `${p.score} pts` : ''));
   $('leaveBtn').textContent = 'Leave';

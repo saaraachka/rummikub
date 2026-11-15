@@ -40,7 +40,8 @@ describe('lobby', () => {
   });
   test('timer options', () => {
     assert.equal(setTimer(createGame(), 60).settings.timer, 60);
-    assert.throws(() => setTimer(createGame(), 30));
+    assert.equal(setTimer(createGame(), 30).settings.timer, 30);
+    assert.throws(() => setTimer(createGame(), 45));
   });
   test('inputs are not mutated', () => {
     const s = createGame();

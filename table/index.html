@@ -59,9 +59,20 @@
       <div class="board-head">
         <div id="turnName" class="turn-name"></div>
         <div id="turnClock" class="turn-clock" hidden></div>
+        <div id="pendingTimer" class="pending-timer" hidden></div>
+        <button id="settingsBtn" class="gear-btn" aria-label="Game settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="settingsPanel"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg></button>
       </div>
       <div id="boardInner" class="board-inner"></div>
       <div id="banner" class="banner" aria-live="polite"></div>
+      <div id="settingsPanel" class="settings-panel" role="dialog" aria-label="Game settings" hidden>
+        <div class="sp-head">
+          <h3>Turn timer</h3>
+          <button id="settingsClose" class="sp-close" aria-label="Close settings">✕</button>
+        </div>
+        <div id="gameTimerOptions" class="seg big-seg" role="radiogroup" aria-label="Turn timer"></div>
+        <p id="timerNote" class="sp-note"></p>
+        <div class="sp-bar" aria-hidden="true"><i id="spBar"></i></div>
+      </div>
     </main>
     <div id="netStatus" class="net-status" hidden></div>
   </section>

@@ -320,3 +320,43 @@ body {
 .sound-ctl.locked input, .sound-ctl.muted input { display: none; }
 .sound-ctl:not(.locked) #soundLbl { display: none; }
 .sound-ctl input[type="range"] { width: 120px; accent-color: var(--accent); margin-right: 1vh; }
+
+/* ---------------------------------------------------------------- in-game settings */
+
+.board-head .turn-clock { margin-left: auto; }
+.board-head .turn-clock[hidden] + .pending-timer, .board-head .turn-clock[hidden] ~ .gear-btn { margin-left: auto; }
+.board-head .turn-clock[hidden] + .pending-timer + .gear-btn { margin-left: 0; }
+.pending-timer {
+  padding: 0.6vh 1.6vh; border-radius: 99px;
+  background: rgba(255, 207, 63, 0.16); color: var(--accent);
+  font-size: 2vh; font-weight: 800; white-space: nowrap;
+}
+.gear-btn {
+  flex: none;
+  width: 7vh; height: 7vh; min-width: 48px; min-height: 48px;
+  display: grid; place-items: center;
+  border-radius: 1.6vh;
+  background: rgba(0, 0, 0, 0.25); color: var(--ink-dim);
+}
+.gear-btn svg { width: 55%; height: 55%; }
+.gear-btn[aria-expanded="true"] { background: var(--ink); color: var(--felt-dark); }
+
+.settings-panel {
+  position: absolute; top: 11vh; right: 2.5vw; z-index: 5;
+  width: min(560px, 46vw);
+  padding: 2.6vh 2.6vh 0;
+  border-radius: 2.4vh;
+  background: var(--felt-dark);
+  box-shadow: 0 2vh 6vh rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  animation: pop-in 0.2s ease-out;
+}
+.sp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2vh; }
+.sp-head h3 { margin: 0; font-size: 3vh; }
+.sp-close { width: 6vh; height: 6vh; min-width: 44px; min-height: 44px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); font-size: 2.6vh; }
+.big-seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6vh; }
+.big-seg button { min-height: max(8vh, 56px); font-size: 2.8vh; border-radius: 1.2vh; }
+.sp-note { margin: 1.8vh 0 2.2vh; font-size: 2vh; color: var(--ink-dim); line-height: 1.35; }
+.sp-note b { color: var(--accent); }
+.sp-bar { height: 0.6vh; margin: 0 -2.6vh; background: rgba(255, 255, 255, 0.06); }
+.sp-bar i { display: block; height: 100%; background: var(--accent); transform-origin: left; }

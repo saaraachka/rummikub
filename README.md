@@ -10,12 +10,23 @@ The game uses the standard 106-tile rummy rules (numbers 1–13 in four colors, 
 2. Everyone scans the QR code (or opens `/play/` and types the code) and enters a name.
    While the phone connects, a status line under the Join button says what's happening: "Connecting to room ABCD…", "Connected", or what to fix if it can't get through (wrong code, no internet, or "Couldn't reach the table — try joining the same Wi-Fi as the table").
 3. Short on people? Tap **＋ Add bot** on the table for a computer player (see [Bots](#bots)). A game can start with one person and bots.
-4. Pick a turn timer (off, 1 minute or 2 minutes), choose whether the **strict joker rule** is on (it is by default), and tap **Start game** on the table.
+4. Pick a turn timer (off, 30 seconds, 1 minute or 2 minutes; you can change it later, see below), choose whether the **strict joker rule** is on (it is by default), and tap **Start game** on the table.
 5. On your turn your phone turns yellow. Drag tiles (or tap a tile, then tap where it should go) from your rack onto the board, rearrange existing sets, then tap **Commit**. **Reset** puts everything back the way it was at the start of your turn. **Draw** takes a tile and ends your turn.
 6. The table validates the move. If something is wrong your phone explains why ("Run 4-5-7 (red) isn't consecutive", "Your first meld totals 24 points; it needs at least 30") and you keep editing. The table also shows the message so everyone knows what happened.
 7. The first player to empty their rack wins the round. The table shows the scores and a **Next round** button; scores carry over until someone taps **Back to lobby**.
 
 The table never shows anyone's tiles, only how many each player holds.
+
+### Changing the timer mid-game
+
+During play, the gear button in the top-right corner of the table opens the timer options (Off / 30s / 1 min / 2 min). Only the table can change them; phones have no control for it.
+
+- **A new time starts with the next turn**, so whoever is playing is never cut off mid-move. The table shows a banner ("Timer set to 1 min — starts next turn") and a "Next turn: 1 min" tag beside the clock until it takes effect. Phones show a short notice and mention it in their status line.
+- **Off stops the clock immediately**, since turning it off never hurts anyone.
+- **Changing your mind** back to the current time before the turn ends cancels the pending change.
+- **Auto-close.** The panel closes itself 8 seconds after the last touch (1.6 seconds after you pick an option, so you can see it register), or when you tap outside it. It never sits on the board on the TV.
+- **Saved with the game.** The setting, including a change that hasn't kicked in yet, survives a table reload. Games saved before this feature existed load with the timer they started with.
+- **Bots** are timed exactly like people: the same countdown, and a draw if it runs out.
 
 ### Rules as implemented
 

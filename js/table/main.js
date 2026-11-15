@@ -10,6 +10,7 @@ import { transportFromUrl } from '../net/transports.js';
 import {
   createGame, addPlayer, renamePlayer, removePlayer, setTimer, setStrictJokers, startRound, commitTurn,
   drawTile, reorderRack, resetToLobby, publicView, playerView, currentPlayerId, setBotLevel, strictJokersOn,
+  turnClock, restoreGame, effectiveTimer, timerLabel,
   MIN_PLAYERS, MAX_PLAYERS, TIMER_OPTIONS, BOT_LEVELS,
 } from '../game/engine.js';
 import { tileHtml, escapeHtml, BOT_ICON } from '../ui/tile-view.js';
@@ -32,7 +33,9 @@ let game = createGame();
 let seats = {}; // clientId -> playerId
 let nextPid = 0;
 let room = null;
-let deadline = 0; // ms timestamp when current turn times out (0 = no timer)
+// Turn countdown, derived from the game by the pure turnClock() in the engine.
+let clockState = null; // {turnNumber, deadline, total}
+let deadline = 0; // ms timestamp when the current turn times out (0 = no timer)
 let deadlineTurn = -1;
 
 function save() {
@@ -66,7 +69,7 @@ async function boot() {
   if (WATCH) return bootWatch();
   const saved = load();
   if (saved?.game) {
-    game = saved.game;
+    game = restoreGame(saved.game); // older saves get any newer settings filled in
     seats = saved.seats || {};
     nextPid = saved.nextPid || 0;
   }
@@ -185,14 +188,11 @@ function broadcastState() {
 
 /** After any state change: reset the timer if the turn moved, persist, sync, redraw. */
 function commit({ broadcast }) {
-  if (game.phase === 'playing' && game.settings.timer && deadlineTurn !== game.turnNumber) {
-    deadlineTurn = game.turnNumber;
-    deadline = Date.now() + game.settings.timer * 1000;
-  }
-  if (game.phase !== 'playing' || !game.settings.timer) {
-    deadline = 0;
-    deadlineTurn = -1;
-  }
+  // New deadline once per turn; cleared at once if the timer is turned off.
+  // Timer changes made mid-turn only reach game.settings.timer when the next turn starts.
+  clockState = turnClock(clockState, game, Date.now());
+  deadline = clockState.deadline;
+  deadlineTurn = deadline ? clockState.turnNumber : -1;
   save();
   if (broadcast) broadcastState();
   render();
@@ -243,7 +243,7 @@ function setupLobby() {
 function setupLobbyControls() {
 
   $('timerOptions').innerHTML = TIMER_OPTIONS.map(
-    (s) => `<button role="radio" data-s="${s}">${s ? `${s / 60} min` : 'Off'}</button>`,
+    (s) => `<button role="radio" data-s="${s}">${timerLabel(s)}</button>`,
   ).join('');
   $('timerOptions').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-s]');
@@ -403,6 +403,7 @@ function render() {
       : botLevel(cur) ? `${BOT_ICON}<span>${escapeHtml(playerName(cur))}</span> is thinking…`
       : `<span>${escapeHtml(playerName(cur))}</span>'s turn`;
     $('poolCount').textContent = v.poolCount;
+    renderSettingsPanel(v);
   }
   if (v.phase === 'roundOver') renderRoundOver(v);
   renderEvent(v);
@@ -469,7 +470,7 @@ function renderTimer() {
   clock.hidden = !deadline;
   const bar = document.querySelector('.player.current .timer');
   if (!deadline) return;
-  const total = game.settings.timer * 1000;
+  const total = clockState?.total || game.settings.timer * 1000;
   const left = Math.max(0, deadline - Date.now());
   const secs = Math.ceil(left / 1000);
   clock.textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
@@ -561,6 +562,12 @@ function renderEvent(v) {
     case 'skip': text = `${name} was skipped`; break;
     case 'invalid': text = `${name}'s move didn't work: ${escapeHtml(ev.message)}`; kind = 'bad'; break;
     case 'roundStart': text = `Round ${v.round} · ${escapeHtml(playerName(v.currentPlayerId))} goes first`; break;
+    case 'timerChange':
+      if (v.phase !== 'playing') return;
+      text = ev.when === 'nextTurn'
+        ? `Timer set to ${timerLabel(ev.timer)} — starts next turn`
+        : ev.timer ? `Timer set to ${timerLabel(ev.timer)}` : 'Timer off';
+      break;
     default: return;
   }
   const b = $('banner');
@@ -570,6 +577,75 @@ function renderEvent(v) {
   clearTimeout(bannerTimer);
   bannerTimer = setTimeout(() => b.classList.remove('show'), ev.type === 'invalid' ? 4500 : 2800);
 }
+
+// ------------------------------------------------------------------ in-game settings
+
+// The gear on the table opens the timer options. Only the table can change
+// them (phones have no such control, and the table ignores anything else).
+// The panel closes itself after a few idle seconds so it never sits on the TV.
+const PANEL_IDLE_MS = 8000;
+const PANEL_AFTER_PICK_MS = 1600;
+let panelTimer = null;
+let panelCloseAt = 0;
+
+$('gameTimerOptions').innerHTML = TIMER_OPTIONS.map((t) => `<button role="radio" data-t="${t}">${timerLabel(t)}</button>`).join('');
+
+function openPanel() {
+  $('settingsPanel').hidden = false;
+  $('settingsBtn').setAttribute('aria-expanded', 'true');
+  renderSettingsPanel(publicView(game));
+  armPanelClose(PANEL_IDLE_MS);
+}
+function closePanel() {
+  clearTimeout(panelTimer);
+  $('settingsPanel').hidden = true;
+  $('settingsBtn').setAttribute('aria-expanded', 'false');
+}
+function armPanelClose(ms) {
+  clearTimeout(panelTimer);
+  panelCloseAt = Date.now() + ms;
+  panelTimer = setTimeout(closePanel, ms);
+  const bar = $('spBar');
+  bar.style.transition = 'none';
+  bar.style.transform = 'scaleX(1)';
+  void bar.offsetWidth;
+  bar.style.transition = `transform ${ms}ms linear`;
+  bar.style.transform = 'scaleX(0)';
+}
+
+function renderSettingsPanel(v) {
+  const pending = v.settings.pendingTimer;
+  const pt = $('pendingTimer');
+  pt.hidden = !(v.phase === 'playing' && pending != null);
+  if (!pt.hidden) pt.textContent = `Next turn: ${timerLabel(pending)}`;
+  if (v.phase !== 'playing') closePanel();
+  if ($('settingsPanel').hidden) return;
+  const chosen = pending ?? v.settings.timer;
+  for (const b of $('gameTimerOptions').children) b.setAttribute('aria-checked', String(Number(b.dataset.t) === chosen));
+  $('timerNote').innerHTML = pending != null
+    ? `<b>${timerLabel(pending)}</b> starts next turn. This turn keeps ${v.settings.timer ? timerLabel(v.settings.timer) : 'no timer'}.`
+    : 'New times start with the next turn, so nobody is cut off. <b>Off</b> stops the clock right away.';
+}
+
+$('settingsBtn').addEventListener('click', () => ($('settingsPanel').hidden ? openPanel() : closePanel()));
+$('settingsClose').addEventListener('click', closePanel);
+$('settingsPanel').addEventListener('pointerdown', () => {
+  if (Date.now() < panelCloseAt) armPanelClose(Math.max(PANEL_IDLE_MS, panelCloseAt - Date.now()));
+});
+$('gameTimerOptions').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-t]');
+  if (!b || game.phase !== 'playing') return;
+  game = setTimer(game, Number(b.dataset.t));
+  commit({ broadcast: true });
+  armPanelClose(PANEL_AFTER_PICK_MS);
+});
+document.addEventListener('pointerdown', (e) => {
+  if ($('settingsPanel').hidden || e.target.closest('#settingsPanel, #settingsBtn')) return;
+  closePanel();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closePanel();
+});
 
 // ------------------------------------------------------------------ bots
 
