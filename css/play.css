@@ -91,7 +91,7 @@ body { font-size: 16px; }
 
 .game {
   display: grid;
-  grid-template-rows: auto auto 1fr auto auto auto;
+  grid-template-rows: auto auto auto 1fr auto auto auto;
 }
 
 .top {
@@ -264,7 +264,9 @@ body { font-size: 16px; }
   border-radius: 22px;
   background: var(--accent);
   color: #1c1a10;
-  font-size: 44px; font-weight: 900; letter-spacing: -0.02em;
+  font-size: clamp(28px, 10vw, 44px); font-weight: 900; letter-spacing: -0.02em;
+  max-width: calc(100vw - 32px);
+  text-align: center; line-height: 1.1;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
 }
 .turn-flash.go .turn-flash-banner { animation: turn-banner 1.8s cubic-bezier(0.2, 1.4, 0.5, 1) forwards; }
@@ -284,3 +286,28 @@ body { font-size: 16px; }
 @media (prefers-reduced-motion: reduce) {
   .turn-flash.go { animation: none; opacity: 1; }
 }
+
+/* ---------------------------------------------------------------- placements */
+
+.medal {
+  display: inline-grid; place-items: center;
+  min-width: 34px; height: 24px; padding: 0 6px;
+  border-radius: 99px;
+  font-size: 12px; font-weight: 900;
+  background: #4b5d5a; color: #fff;
+}
+.medal.m1 { background: #ffcf3f; color: #3d2f00; }
+.medal.m2 { background: #d5dde0; color: #26343a; }
+.medal.m3 { background: #d39a5f; color: #3a1f05; }
+.finished-strip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 14px; font-weight: 700;
+}
+.finished-strip .fin { display: inline-flex; align-items: center; gap: 6px; }
+.finished-strip .fin.me { color: var(--accent); }
+.game.finished .top { background: rgba(255, 207, 63, 0.18); }
+.game.finished .actions, .game.finished .rack-tools, .game.finished .new-set { display: none !important; }
+.game.finished .sets .tile { touch-action: pan-y; }
+.wait-players li .medal { margin-right: 2px; }

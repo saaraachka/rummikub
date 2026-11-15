@@ -13,9 +13,27 @@ The game uses the standard 106-tile rummy rules (numbers 1–13 in four colors, 
 4. Pick a turn timer (off, 30 seconds, 1 minute or 2 minutes; you can change it later, see below), choose whether the **strict joker rule** is on (it is by default), and tap **Start game** on the table.
 5. On your turn your phone turns yellow. Drag tiles (or tap a tile, then tap where it should go) from your rack onto the board, rearrange existing sets, then tap **Commit**. **Reset** puts everything back the way it was at the start of your turn. **Draw** takes a tile and ends your turn.
 6. The table validates the move. If something is wrong your phone explains why ("Run 4-5-7 (red) isn't consecutive", "Your first meld totals 24 points; it needs at least 30") and you keep editing. The table also shows the message so everyone knows what happened.
-7. The first player to empty their rack wins the round. The table shows the scores and a **Next round** button; scores carry over until someone taps **Back to lobby**.
+7. The first player to empty their rack finishes 1st and wins the round's points, but play continues for 2nd, 3rd and so on (see [Places after the first out](#places-after-the-first-out)). When the round ends, the table shows the places, the points and a **Next round** button; scores carry over until someone taps **Back to lobby**.
 
 The table never shows anyone's tiles, only how many each player holds.
+
+### Places after the first out
+
+A round doesn't stop when someone empties their rack.
+
+- **Finishing.** The first player out finishes 1st. The table celebrates ("Sam finished 1st!"), their card gets a 1st-place medal, and from then on turns skip them. Their phone celebrates too, then switches to a read-only view of the board: "You finished 1st!", watching whoever is playing.
+- **Keep playing.** Everyone else plays on normally, and the next player to empty their rack takes 2nd, and so on. Phones of players still in show a "Finished" strip with who has finished and in what place.
+- **The round ends when:**
+  - only one player still has tiles (they come last), or
+  - the pool is empty and every remaining player passes in a row, or
+  - the table taps **End round now…** in the sidebar, then taps again to confirm (it disarms after 5 seconds), or
+  - every person has finished and only bots are left. The table finishes the round right away instead of making everyone watch bots. (All-bot games, like watch mode, play every place out.)
+
+  In the last three cases, players still holding tiles are ranked by lowest rack value (ties keep seat order).
+- **Round-over screen.** On the table and on every phone it lists the final places (1st, 2nd, 3rd, 4th), how each player finished ("Went out" or points left), the official points for the round, and running totals.
+- **Two players.** With only two, the first out ends the round at once, exactly as before.
+- **Disconnected players** can still be skipped with the **Skip turn** button, and the turn timer works as before.
+- **Saving.** Places and the points snapshot are saved with the game, so a table reload mid-round keeps them. Games saved before this change load normally.
 
 ### Changing the timer mid-game
 
@@ -37,8 +55,8 @@ During play, the gear button in the top-right corner of the table opens the time
 - **Taking a joker from the table (strict joker rule, on by default).** You can only take a joker that's already on the table by playing, from your rack, the exact tile it stands for. If the joker is in a group of 3, either of the two missing colors will do; in a group of 4 it's the one missing color. The joker you take must be played in a new or existing set in the same turn (it can never go into your rack), and you can't take jokers at all before your initial meld. A joker that keeps standing for the same tile can still move, so splitting a run or adding to a set that contains a joker is fine. The table checks all of this when you commit and explains what's wrong, for example "To take the joker that stands for black 6, you must play a black 6 from your rack in its place" or "The joker you took from the table must be played in a set this turn".
 - **Loose joker rule (lobby toggle off).** Jokers on the table can be moved like any other tile, as long as every set is valid at the end of the turn. Many home games play this way.
 - **Drawing.** If you can't or won't play, draw one tile and your turn ends. If the timer runs out, you draw one tile and any unfinished changes are discarded.
-- **Empty pool.** Once there's nothing left to draw, "Draw" becomes "Pass". If every player passes in a row, the round ends and the lowest rack value wins.
-- **Scoring.** Each loser subtracts the value of the tiles left in their rack (joker = 30). The winner gains the sum of those amounts.
+- **Empty pool.** Once there's nothing left to draw, "Draw" becomes "Pass". If every player still holding tiles passes in a row, the round ends and they're ranked by lowest rack value.
+- **Scoring (official).** Points are fixed the moment the first player goes out. At that instant each other player's rack value (joker = 30) is recorded; they lose that much and the first player out gains the total. Continued play only decides places, never points. If nobody goes out (the round stalls or is ended early), the lowest rack is 1st and racks are scored as they stand.
 - **Absent players.** If the current player's phone is disconnected, the table shows a **Skip turn** button on their card (they draw a tile, as if they had drawn).
 
 ## Bots
@@ -49,7 +67,7 @@ Computer players fill empty seats so you can play, or test, with fewer than four
 - **Easy** makes its first meld from rack-only sets worth 30+. After that it plays new sets from its rack and adds single tiles to the ends of runs or into groups. It never rearranges the table, and draws when it can't play.
 - **Normal** does everything Easy does, and also rearranges the table. It splits a run to insert a tile (3-4-5-6-7 plus a 5 becomes 3-4-5 and 5-6-7). It also takes a tile off a group of four, the end of a run, or the middle of a long run, to complete a new set with tiles from its rack. Among the moves it finds, it plays the one that gets rid of the most points from its rack. In 300 seeded head-to-head games Normal beat Easy 281 times.
 - **Jokers.** Bots play jokers from their own rack, but never take jokers off the table, whichever joker rule is active. A joker that's already on the table keeps standing for the same tile.
-- **Same rules as everyone.** Bots run on the table, not on phones. A bot's move goes through exactly the same commit and validation code as a phone's move, so bots never get a shortcut, and an invalid bot move would show up as the usual red "move didn't work" banner. Bots also obey the turn timer and the empty-pool ending.
+- **Same rules as everyone.** Bots run on the table, not on phones. A bot's move goes through exactly the same commit and validation code as a phone's move, so bots never get a shortcut, and an invalid bot move would show up as the usual red "move didn't work" banner. Bots also obey the turn timer, the empty-pool ending, and the turn order that skips finished players.
 - **Thinking.** The move search runs in a Web Worker, so the table never freezes. It stops after 1.5 seconds and plays the best move it found so far, or draws. If the worker doesn't answer within about 2.2 seconds, the table restarts it and the bot draws. The table shows "Robo Ada is thinking…" for a second or two before each bot move, then animates the move like a person's.
 
 ### Watch mode (all bots)
@@ -87,7 +105,8 @@ If a file is missing or can't be decoded, that slot quietly falls back to a buil
 | `place` | `place.mp3` | table | a turn is committed (tiles placed) | Tactile clack of tiles on a table; short and satisfying |
 | `draw` | `draw.mp3` | table | a player draws (or times out and draws) | Soft slide/swish of a tile off the pile |
 | `invalid` | `invalid.mp3` | table | the table rejects a move | Gentle "nope", two descending notes; noticeable, not harsh |
-| `roundWon` | `round-won.mp3` | table | someone goes out / wins the round | Celebratory, 1–1.5 s, the biggest sound in the game |
+| `roundWon` | `round-won.mp3` | table | the round ends | Celebratory, 1–1.5 s, the biggest sound in the game |
+| `playerOut` | `player-out.mp3` | table | someone empties their rack and play continues | Bright "well done" flourish, under a second; smaller than `roundWon` |
 | `timerWarning` | `timer-warning.mp3` | table | 10 seconds left on the turn timer | Two quick ticks, urgent but not alarming |
 | `playerJoin` | `player-join.mp3` | table | someone (or a bot) joins the lobby | Quick upward blip |
 | `playerLeave` | `player-leave.mp3` | table | someone leaves the lobby | Quick downward blip, softer than join |
@@ -99,8 +118,8 @@ If a file is missing or can't be decoded, that slot quietly falls back to a buil
 | `commitOk` | `commit-ok.mp3` | phone | the table accepts your turn | Upbeat two-note confirmation |
 | `commitError` | `commit-error.mp3` | phone | the table rejects your turn | Low two-note buzz, clearly "try again" |
 | `drew` | `drew.mp3` | phone | you drew a tile | Soft swish with a little sparkle |
-| `won` | `won.mp3` | phone | you won the round | Celebration; can share a file with `roundWon` |
-| `roundOver` | `round-over.mp3` | phone | someone else won the round | Gentle descending "that's the round" |
+| `won` | `won.mp3` | phone | you empty your rack (any place) | Celebration; can share a file with `roundWon` |
+| `roundOver` | `round-over.mp3` | phone | the round ends (and you didn't just go out) | Gentle descending "that's the round" |
 
 Which event triggers which sound is decided in `js/audio/cues.js` (pure, unit-tested). Bots trigger exactly the same table sounds as people.
 

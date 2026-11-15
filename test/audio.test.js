@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { SOUNDS } from '../js/config.js';
-import { tableCues, phoneCues, timerCue, commitCue, editCue, pickupCue } from '../js/audio/cues.js';
+import { tableCues, phoneCues, timerCue, commitCue, editCue, pickupCue, ordinal } from '../js/audio/cues.js';
 import { createSoundPlayer } from '../js/audio/player.js';
 import { RECIPES, renderSound } from '../js/audio/synth.js';
 import { createHaptics, PATTERNS } from '../js/ui/haptics.js';
@@ -73,6 +73,24 @@ describe('cues: table', () => {
     const drew = drawTile(good.state, 'p2');
     assert.deepEqual(sounds(tableCues(publicView(good.state), publicView(drew.state))), ['draw', 'turnStart']);
   });
+  test('going out mid-round (3+ players) celebrates and the turn chime waits', () => {
+    let s = createGame();
+    for (const id of ['p1', 'p2', 'p3']) s = addPlayer(s, { id, name: id });
+    s = rig(startRound(s, 3), { p1: ['r10a', 'r11a', 'r12a'] });
+    s.melded.p1 = true;
+    const r = commitTurn(s, 'p1', [['r10a', 'r11a', 'r12a']]);
+    assert.equal(r.state.phase, 'playing');
+    const cues = tableCues(publicView(s), publicView(r.state));
+    assert.deepEqual(sounds(cues), ['place', 'playerOut', 'turnStart']);
+    assert.ok(cues[2].delay > cues[1].delay);
+    // and on the phones: the finisher celebrates with their place; the next player hears their turn
+    assert.deepEqual(phoneCues(...views(s, r.state, 'p1')), [{ sound: 'won', haptic: 'double', flash: true, flashText: 'You finished 1st!' }]);
+    assert.deepEqual(sounds(phoneCues(...views(s, r.state, 'p2'))), ['yourTurn']);
+    assert.deepEqual(phoneCues(...views(s, r.state, 'p3')), []);
+  });
+  test('ordinals', () => {
+    assert.deepEqual([1, 2, 3, 4, 11, 12, 13, 21, 22].map(ordinal), ['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd']);
+  });
   test('going out plays the placement and the win', () => {
     const s = rig(game(), { p1: ['r10a', 'r11a', 'r12a'] });
     const r = commitTurn(s, 'p1', [['r10a', 'r11a', 'r12a']]);
@@ -130,7 +148,7 @@ describe('cues: phone (only the player it concerns)', () => {
   test('round over: winner hears "won", others "roundOver"', () => {
     const s = rig(game(), { p1: ['r10a', 'r11a', 'r12a'] });
     const r = commitTurn(s, 'p1', [['r10a', 'r11a', 'r12a']]).state;
-    assert.deepEqual(phoneCues(...views(s, r, 'p1')), [{ sound: 'won', haptic: 'double' }]);
+    assert.deepEqual(phoneCues(...views(s, r, 'p1')), [{ sound: 'won', haptic: 'double', flash: true, flashText: 'You finished 1st!' }]);
     assert.deepEqual(phoneCues(...views(s, r, 'p2')), [{ sound: 'roundOver' }]);
   });
   test('unchanged snapshots (e.g. a rack reorder echo) are silent', () => {

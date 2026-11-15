@@ -102,6 +102,10 @@ export const RECIPES = {
     ...['C5', 'E5', 'G5'].map((n, i) => ({ at: i * 0.1, dur: 0.3, freq: note(n), partials: bell, decay: 0.12, gain: 0.3 })),
     ...['C6', 'E5', 'G5'].map((n) => ({ at: 0.3, dur: 1.0, freq: note(n), type: 'triangle', attack: 0.01, decay: 0.45, gain: 0.22 })),
   ]),
+  playerOut: (sr) => mix(sr, [
+    ...['G5', 'C6', 'E6'].map((n, i) => ({ at: i * 0.08, dur: 0.5, freq: note(n), partials: bell, decay: 0.18, gain: 0.32 })),
+    { at: 0.24, dur: 0.7, freq: note('G6'), partials: bell, decay: 0.3, gain: 0.25 },
+  ]),
   timerWarning: (sr) => mix(sr, [0, 0.16].map((at) => ({ at, dur: 0.09, freq: note('A5'), type: 'triangle', decay: 0.04, gain: 0.45 }))),
   playerJoin: (sr) => mix(sr, [{ at: 0, dur: 0.16, freq: note('E5'), to: note('A5'), type: 'triangle', decay: 0.07, gain: 0.4 }]),
   playerLeave: (sr) => mix(sr, [{ at: 0, dur: 0.16, freq: note('A5'), to: note('E5'), type: 'triangle', decay: 0.07, gain: 0.35 }]),

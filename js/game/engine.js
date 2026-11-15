@@ -26,6 +26,8 @@ export function createGame() {
     turn: 0, // index into players
     turnNumber: 0,
     passesInRow: 0,
+    finished: [], // player ids in the order they emptied their racks this round
+    scoreSnapshot: null, // {winnerId, rackValues} taken the moment the first player goes out
     setCounter: 0,
     seq: 0,
     lastEvent: null,
@@ -135,6 +137,8 @@ export function restoreGame(saved) {
   if (!TIMER_OPTIONS.includes(s.settings.timer)) s.settings.timer = 0;
   if (!TIMER_OPTIONS.includes(s.settings.pendingTimer)) s.settings.pendingTimer = null;
   if (typeof s.settings.strictJokers !== 'boolean') s.settings.strictJokers = true;
+  if (!Array.isArray(s.finished)) s.finished = [];
+  if (s.scoreSnapshot === undefined) s.scoreSnapshot = null;
   return s;
 }
 
@@ -174,6 +178,8 @@ export function startRound(state, seed = (Math.random() * 2 ** 32) >>> 0) {
   s.turn = (s.round - 1) % s.players.length;
   s.turnNumber += 1;
   s.passesInRow = 0;
+  s.finished = [];
+  s.scoreSnapshot = null;
   s.result = null;
   applyPendingTimer(s);
   event(s, { type: 'roundStart' });
@@ -185,7 +191,7 @@ export function resetToLobby(state) {
   const s = clone(state);
   Object.assign(s, {
     phase: 'lobby', round: 0, pool: [], board: [], racks: {}, melded: {},
-    passesInRow: 0, result: null,
+    passesInRow: 0, finished: [], scoreSnapshot: null, result: null,
   });
   s.players.forEach((p) => (p.score = 0));
   event(s, { type: 'lobby' });
@@ -206,8 +212,27 @@ function assertTurn(state, playerId) {
   if (currentPlayerId(state) !== playerId) throw new Error("It isn't your turn");
 }
 
+/** Players still holding tiles this round, in seat order. */
+export function activePlayerIds(state) {
+  const done = new Set(state.finished || []);
+  return state.players.map((p) => p.id).filter((id) => !done.has(id));
+}
+
+/** 1-based finishing place of a player, or null if they're still playing. */
+export function placeOf(state, playerId) {
+  const i = (state.finished || []).indexOf(playerId);
+  return i < 0 ? null : i + 1;
+}
+
 function nextTurn(s) {
-  s.turn = (s.turn + 1) % s.players.length;
+  const done = new Set(s.finished);
+  for (let k = 1; k <= s.players.length; k++) {
+    const i = (s.turn + k) % s.players.length;
+    if (!done.has(s.players[i].id)) {
+      s.turn = i;
+      break;
+    }
+  }
   s.turnNumber += 1;
   applyPendingTimer(s);
 }
@@ -249,10 +274,28 @@ export function commitTurn(state, playerId, sets) {
   const firstMeld = !state.melded[playerId];
   s.melded[playerId] = true;
   s.passesInRow = 0;
-  event(s, { type: 'commit', playerId, played: v.played, firstMeld, meldPoints: firstMeld ? v.meldPoints : undefined });
+  const out = v.rackAfter.length === 0;
+  if (out) {
+    // Official scoring is fixed the moment the first player goes out;
+    // play continues only to decide the remaining places.
+    if (!s.finished.length) {
+      s.scoreSnapshot = {
+        winnerId: playerId,
+        rackValues: Object.fromEntries(s.players.map((p) => [p.id, rackValue(s.racks[p.id])])),
+      };
+    }
+    s.finished.push(playerId);
+  }
+  event(s, {
+    type: 'commit', playerId, played: v.played, firstMeld, meldPoints: firstMeld ? v.meldPoints : undefined,
+    ...(out ? { out: true, place: s.finished.length } : {}),
+  });
 
-  if (v.rackAfter.length === 0) {
-    endRound(s, playerId, 'out');
+  const remaining = activePlayerIds(s);
+  if (out && remaining.length <= 1) {
+    endRound(s, 'out', { viaCommit: true });
+  } else if (out && onlyBotsLeft(s)) {
+    endRound(s, 'botsOnly', { viaCommit: true });
   } else {
     nextTurn(s);
   }
@@ -277,9 +320,8 @@ export function drawTile(state, playerId, reason = 'draw') {
     s.passesInRow += 1;
   }
   event(s, { type: reason, playerId, drew });
-  if (!drew && s.passesInRow >= s.players.length) {
-    const winner = [...s.players].sort((a, b) => rackValue(s.racks[a.id]) - rackValue(s.racks[b.id]))[0];
-    endRound(s, winner.id, 'blocked');
+  if (!drew && s.passesInRow >= activePlayerIds(s).length) {
+    endRound(s, 'blocked');
   } else {
     nextTurn(s);
   }
@@ -323,16 +365,97 @@ export function scoreRound(racks, winnerId) {
   return deltas;
 }
 
-function endRound(s, winnerId, reason) {
-  const deltas = scoreRound(s.racks, winnerId);
-  const rackValues = {};
-  for (const p of s.players) {
-    rackValues[p.id] = rackValue(s.racks[p.id]);
-    p.score += deltas[p.id];
-  }
+/**
+ * True when at least one person is seated, every person has finished, and
+ * only bots still hold tiles. (All-bot games, like watch mode, play out fully.)
+ */
+function onlyBotsLeft(s) {
+  const humans = s.players.filter((p) => !p.bot);
+  if (!humans.length) return false;
+  const done = new Set(s.finished);
+  return humans.every((p) => done.has(p.id)) && s.players.some((p) => p.bot && !done.has(p.id));
+}
+
+/**
+ * End the round now (table's "End round now" button): players still holding
+ * tiles are ranked by lowest rack value. Scoring is unchanged: if someone
+ * already went out it comes from the snapshot taken at that moment.
+ */
+export function endRoundNow(state) {
+  if (state.phase !== 'playing') throw new Error('No round in progress');
+  const s = clone(state);
+  endRound(s, 'ended');
+  return s;
+}
+
+/**
+ * Final placements: players who went out, in order, then everyone still
+ * holding tiles by lowest rack value (ties keep seat order).
+ */
+export function rankPlayers(state) {
+  const done = state.finished || [];
+  const rest = activePlayerIds(state)
+    .map((id, seat) => ({ id, seat, v: rackValue(state.racks[id] || []) }))
+    .sort((a, b) => a.v - b.v || a.seat - b.seat)
+    .map((x) => x.id);
+  return [...done, ...rest];
+}
+
+/**
+ * reason: 'out'      everyone but one player went out
+ *         'blocked'  pool empty and every remaining player passed in a row
+ *         'ended'    the table ended the round early
+ *         'botsOnly' every person finished; the bots still playing were ranked
+ */
+function endRound(s, reason, { viaCommit = false } = {}) {
+  const order = rankPlayers(s);
+  const done = new Set(s.finished);
+  const placements = order.map((id, i) => ({
+    id,
+    place: i + 1,
+    how: done.has(id) ? 'out' : 'rack',
+    rackValue: rackValue(s.racks[id] || []),
+  }));
+  // Official scoring: from the first player out, at that moment. If nobody
+  // went out, the lowest rack wins and racks are scored as they are now.
+  const basis = s.scoreSnapshot ?? {
+    winnerId: order[0],
+    rackValues: Object.fromEntries(s.players.map((p) => [p.id, rackValue(s.racks[p.id])])),
+  };
+  const deltas = scoreFromValues(basis.rackValues, basis.winnerId);
+  for (const p of s.players) p.score += deltas[p.id] ?? 0;
   s.phase = 'roundOver';
-  s.result = { winnerId, reason, deltas, rackValues };
-  event(s, { type: 'roundOver', playerId: winnerId, reason });
+  s.result = {
+    winnerId: basis.winnerId,
+    reason,
+    deltas,
+    rackValues: basis.rackValues, // the values points were scored from
+    scoredAtFirstOut: !!s.scoreSnapshot,
+    placements,
+  };
+  event(s, { type: 'roundOver', playerId: basis.winnerId, reason, viaCommit });
+}
+
+function scoreFromValues(values, winnerId) {
+  const deltas = {};
+  let total = 0;
+  for (const [pid, v] of Object.entries(values)) {
+    if (pid === winnerId) continue;
+    deltas[pid] = -v;
+    total += v;
+  }
+  deltas[winnerId] = total;
+  return deltas;
+}
+
+/** Placements for any result, including ones saved before placements existed. */
+export function resultPlacements(result, players) {
+  if (result?.placements) return result.placements;
+  if (!result) return [];
+  const ids = players.map((p) => p.id);
+  const order = [result.winnerId, ...ids.filter((id) => id !== result.winnerId)
+    .sort((a, b) => (result.rackValues[a] ?? 0) - (result.rackValues[b] ?? 0))];
+  return order.map((id, i) => ({ id, place: i + 1, how: i === 0 ? 'out' : 'rack', rackValue: result.rackValues[id] ?? 0 }));
 }
 
 // ---------------------------------------------------------------- views
@@ -350,10 +473,12 @@ export function publicView(state) {
       bot: p.bot ?? null,
       tileCount: state.racks[p.id]?.length ?? 0,
       melded: !!state.melded[p.id],
+      place: placeOf(state, p.id),
     })),
     board: state.board,
     poolCount: state.pool.length,
     currentPlayerId: currentPlayerId(state),
+    finished: state.finished || [],
     turnNumber: state.turnNumber,
     lastEvent: state.lastEvent,
     result: state.result,

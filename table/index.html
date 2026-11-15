@@ -53,6 +53,7 @@
         <div class="pool-stack" aria-hidden="true"><i></i><i></i><i></i></div>
         <div><b id="poolCount">0</b><span>tiles to draw</span></div>
       </div>
+      <button id="endRoundBtn" class="btn ghost small-btn" hidden>End round now…</button>
       <button id="menuBtn" class="btn ghost small-btn">Back to lobby…</button>
     </aside>
     <main id="board" class="board">
@@ -64,6 +65,7 @@
       </div>
       <div id="boardInner" class="board-inner"></div>
       <div id="banner" class="banner" aria-live="polite"></div>
+      <div id="celebrate" class="celebrate" hidden aria-hidden="true"></div>
       <div id="settingsPanel" class="settings-panel" role="dialog" aria-label="Game settings" hidden>
         <div class="sp-head">
           <h3>Turn timer</h3>
@@ -82,9 +84,10 @@
       <h2 id="roWinner"></h2>
       <p id="roReason" class="muted"></p>
       <table class="scores">
-        <thead><tr><th>Player</th><th>Left in rack</th><th>This round</th><th>Total</th></tr></thead>
+        <thead><tr><th>Place</th><th>Player</th><th>Finish</th><th>This round</th><th>Total</th></tr></thead>
         <tbody id="roRows"></tbody>
       </table>
+      <p id="roScoring" class="muted ro-scoring"></p>
       <div class="overlay-actions">
         <button id="nextRoundBtn" class="btn primary big">Next round</button>
         <button id="toLobbyBtn" class="btn ghost">Back to lobby</button>

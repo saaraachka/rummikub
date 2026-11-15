@@ -4,13 +4,13 @@
 
 import { APP_ID, SOUNDS, SITE_ROOT, peerOptions } from '../config.js';
 import { createSoundPlayer } from '../audio/player.js';
-import { tableCues, timerCue } from '../audio/cues.js';
+import { tableCues, timerCue, ordinal } from '../audio/cues.js';
 import { hostRoom } from '../net/room.js';
 import { transportFromUrl } from '../net/transports.js';
 import {
   createGame, addPlayer, renamePlayer, removePlayer, setTimer, setStrictJokers, startRound, commitTurn,
   drawTile, reorderRack, resetToLobby, publicView, playerView, currentPlayerId, setBotLevel, strictJokersOn,
-  turnClock, restoreGame, effectiveTimer, timerLabel,
+  turnClock, restoreGame, effectiveTimer, timerLabel, endRoundNow, resultPlacements,
   MIN_PLAYERS, MAX_PLAYERS, TIMER_OPTIONS, BOT_LEVELS,
 } from '../game/engine.js';
 import { tileHtml, escapeHtml, BOT_ICON } from '../ui/tile-view.js';
@@ -404,6 +404,11 @@ function render() {
       : `<span>${escapeHtml(playerName(cur))}</span>'s turn`;
     $('poolCount').textContent = v.poolCount;
     renderSettingsPanel(v);
+    $('endRoundBtn').hidden = v.phase !== 'playing';
+    if (v.phase !== 'playing') {
+      disarmEndRound();
+      $('celebrate').hidden = true;
+    }
   }
   if (v.phase === 'roundOver') renderRoundOver(v);
   renderEvent(v);
@@ -441,17 +446,20 @@ function renderPlayers(v) {
     const online = isOnline(p.id);
     const current = p.id === v.currentPlayerId;
     const thinking = current && p.bot && botTurn === v.turnNumber;
-    return `<li class="player ${current ? 'current' : ''} ${p.bot ? 'is-bot' : ''}" data-pid="${p.id}">
+    const done = p.place != null;
+    return `<li class="player ${current ? 'current' : ''} ${p.bot ? 'is-bot' : ''} ${done ? 'finished' : ''}" data-pid="${p.id}">
       <div class="row">
         ${p.bot ? BOT_ICON : `<span class="dot ${online ? 'on' : 'off'}" title="${online ? 'connected' : 'disconnected'}"></span>`}
         <span class="name">${escapeHtml(p.name)}</span>
+        ${done ? medal(p.place) : ''}
         <span class="count">${p.tileCount}<small>tiles</small></span>
       </div>
       <div class="meta">
         <span class="turn-tag">${thinking ? 'Thinking<i class="dots"><b>.</b><b>.</b><b>.</b></i>' : 'Playing'}</span>
         ${p.bot ? `<span class="badge">${p.bot === 'easy' ? 'Easy bot' : 'Bot'}</span>` : ''}
-        ${online ? '' : '<span class="badge off">offline</span>'}
-        ${p.melded ? '' : '<span class="badge">no meld</span>'}
+        ${done ? `<span>Finished ${ordinal(p.place)}</span>` : ''}
+        ${online || done ? '' : '<span class="badge off">offline</span>'}
+        ${p.melded || done ? '' : '<span class="badge">no meld</span>'}
         ${v.round > 1 || p.score ? `<span>${p.score} pts</span>` : ''}
         ${current && !online && v.phase === 'playing' ? `<button class="skip" data-pid="${p.id}">Skip turn</button>` : ''}
       </div>
@@ -523,22 +531,71 @@ window.addEventListener('resize', () => {
   if (game.phase !== 'lobby') fitBoard();
 });
 
+const medal = (place) => `<span class="medal m${place}">${ordinal(place)}</span>`;
+
+const REASONS = {
+  out: 'Everyone but one player went out.',
+  blocked: 'No tiles left to draw and nobody could play, so the rest are ranked by lowest rack value.',
+  ended: 'The table ended the round; everyone still playing is ranked by lowest rack value.',
+  botsOnly: 'Every person finished, so the bots still playing were ranked by lowest rack value.',
+};
+
 function renderRoundOver(v) {
   const r = v.result;
   const winner = playerName(r.winnerId);
+  const byId = Object.fromEntries(v.players.map((p) => [p.id, p]));
   $('roWinner').textContent = `${winner} wins round ${v.round}!`;
-  $('roReason').textContent = r.reason === 'out'
-    ? `${winner} played their last tile.`
-    : `No tiles left to draw and nobody could play. ${winner} had the lowest rack.`;
-  $('roRows').innerHTML = [...v.players]
-    .sort((a, b) => b.score - a.score)
-    .map((p) => {
-      const d = r.deltas[p.id] ?? 0;
-      return `<tr class="${p.id === r.winnerId ? 'win' : ''}">
-        <td>${escapeHtml(p.name)}</td><td>${r.rackValues[p.id]} pts</td>
-        <td class="${d > 0 ? 'pos' : d < 0 ? 'neg' : ''}">${d > 0 ? '+' : ''}${d}</td><td>${p.score}</td></tr>`;
-    }).join('');
+  $('roReason').textContent = REASONS[r.reason] ?? '';
+  $('roRows').innerHTML = resultPlacements(r, v.players).map((pl) => {
+    const p = byId[pl.id];
+    const d = r.deltas[pl.id] ?? 0;
+    return `<tr class="${pl.place === 1 ? 'win' : ''}">
+      <td class="place">${medal(pl.place)}</td>
+      <td>${p.bot ? BOT_ICON + ' ' : ''}${escapeHtml(p.name)}</td>
+      <td class="finish">${pl.how === 'out' ? 'Went out' : `${pl.rackValue} pts left`}</td>
+      <td class="${d > 0 ? 'pos' : d < 0 ? 'neg' : ''}">${d > 0 ? '+' : ''}${d}</td><td>${p.score}</td></tr>`;
+  }).join('');
+  $('roScoring').textContent = r.scoredAtFirstOut
+    ? `Points use official scoring from the moment ${winner} went out: everyone else loses what was in their rack then (joker = 30), and ${winner} gets the total. Places after that don't change points.`
+    : `Nobody went out, so ${winner} (lowest rack) takes the points: everyone else loses their rack value (joker = 30).`;
 }
+
+// ------------------------------------------------------------------ celebration & ending early
+
+let celebrateTimer = null;
+function celebrate(pid, place) {
+  const el = $('celebrate');
+  el.innerHTML = `${medal(place)}<span>${escapeHtml(playerName(pid))} finished ${ordinal(place)}!</span>`;
+  el.hidden = false;
+  el.style.animation = 'none';
+  void el.offsetWidth;
+  el.style.animation = '';
+  clearTimeout(celebrateTimer);
+  celebrateTimer = setTimeout(() => (el.hidden = true), 2900);
+}
+
+let endArmTimer = null;
+function disarmEndRound() {
+  clearTimeout(endArmTimer);
+  const b = $('endRoundBtn');
+  b.classList.remove('confirm');
+  b.textContent = 'End round now…';
+}
+$('endRoundBtn').addEventListener('click', () => {
+  const b = $('endRoundBtn');
+  if (game.phase !== 'playing') return;
+  if (!b.classList.contains('confirm')) {
+    // Two-step so a stray tap doesn't end the round.
+    b.classList.add('confirm');
+    b.textContent = 'Tap again: rank by tiles left';
+    clearTimeout(endArmTimer);
+    endArmTimer = setTimeout(disarmEndRound, 5000);
+    return;
+  }
+  disarmEndRound();
+  game = endRoundNow(game);
+  commit({ broadcast: true });
+});
 
 let bannerSeq = 0;
 let bannerTimer = null;
@@ -554,6 +611,10 @@ function renderEvent(v) {
       const n = ev.played.length;
       text = `${name} played ${n} tile${n === 1 ? '' : 's'}`;
       if (ev.firstMeld) text += ` · first meld, ${ev.meldPoints} points`;
+      if (ev.out) {
+        text = `${name} went out · ${ordinal(ev.place)} place!`;
+        celebrate(ev.playerId, ev.place);
+      }
       kind = 'good';
       break;
     }

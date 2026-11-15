@@ -4,14 +4,14 @@
 
 import { APP_ID, SOUNDS, SITE_ROOT, peerOptions } from '../config.js';
 import { createSoundPlayer } from '../audio/player.js';
-import { phoneCues, commitCue, pickupCue, editCue } from '../audio/cues.js';
+import { phoneCues, commitCue, pickupCue, editCue, ordinal } from '../audio/cues.js';
 import { createHaptics } from '../ui/haptics.js';
 import { transportFromUrl } from '../net/transports.js';
 import { diagnose } from './diagnose.js';
 import { joinRoom, normalizeCode } from '../net/room.js';
 import { analyzeSet, meldPointsFromRack, INITIAL_MELD_POINTS } from '../game/rules.js';
 import { sortByColor, sortByNumber } from '../game/tiles.js';
-import { timerLabel } from '../game/engine.js';
+import { timerLabel, resultPlacements } from '../game/engine.js';
 import { tileHtml, escapeHtml, BOT_ICON } from '../ui/tile-view.js';
 
 const params = new URLSearchParams(location.search);
@@ -28,7 +28,7 @@ function cue(c) {
   if (!c) return;
   sfx.play(c.sound, { delay: c.delay ?? 0 });
   if (c.haptic) haptics.fire(c.haptic);
-  if (c.flash) flashYourTurn();
+  if (c.flash) flashYourTurn(c.flashText);
 }
 // Browsers keep audio locked until a tap. The Join button counts; so does the
 // first touch anywhere (for phones that rejoin automatically after a refresh).
@@ -175,6 +175,10 @@ function onMessage(msg) {
     syncWork(prev);
     render();
     for (const c of phoneCues(prev, S)) cue(c);
+    const fe = S.lastEvent;
+    if (prev && fe?.type === 'commit' && fe.out && fe.seq !== prev.lastEvent?.seq && fe.playerId !== S.you && S.phase === 'playing') {
+      notice(`${nameOf(fe.playerId)} finished ${ordinal(fe.place)}!`);
+    }
     const ev = S.lastEvent;
     if (prev && ev?.type === 'timerChange' && ev.seq !== prev.lastEvent?.seq && S.phase === 'playing') {
       notice(ev.when === 'nextTurn'
@@ -575,15 +579,21 @@ function render() {
   if (S.phase === 'roundOver') return renderOver();
   show('game');
   const mine = isMyTurn();
+  const myPlace = placeOfMe();
   game.classList.toggle('my-turn', mine);
+  game.classList.toggle('finished', myPlace != null);
   $('offline').hidden = conn.status === 'connected';
 
   const cur = S.currentPlayerId;
   const curBot = S.players.find((p) => p.id === cur)?.bot;
-  $('turnText').textContent = mine ? 'Your turn' : curBot ? `${nameOf(cur)} (bot) is thinking…` : `${nameOf(cur)}'s turn`;
-  $('subText').textContent = mine
-    ? (pending ? 'Checking with the table…' : S.hasMelded ? 'Play tiles, then commit' : `First meld: ${INITIAL_MELD_POINTS}+ points from your rack`)
-    : `You're ${nameOf(S.you)} · ${S.hasMelded ? 'melded' : 'no meld yet'}`;
+  const whose = curBot ? `${nameOf(cur)} (bot) is thinking…` : `${nameOf(cur)}'s turn`;
+  $('turnText').textContent = myPlace != null ? `You finished ${ordinal(myPlace)}!` : mine ? 'Your turn' : whose;
+  $('subText').textContent = myPlace != null
+    ? `Watching · ${whose}`
+    : mine
+      ? (pending ? 'Checking with the table…' : S.hasMelded ? 'Play tiles, then commit' : `First meld: ${INITIAL_MELD_POINTS}+ points from your rack`)
+      : `You're ${nameOf(S.you)} · ${S.hasMelded ? 'melded' : 'no meld yet'}`;
+  renderFinishedStrip();
   const pend = S.settings.pendingTimer;
   if (pend != null) $('subText').textContent += ` · timer ${timerLabel(pend)} from next turn`;
   $('poolCount').textContent = S.poolCount;
@@ -631,7 +641,9 @@ function renderRack() {
   if (work && prevRack.length) fresh.clear();
   $('rack').innerHTML = rack.length
     ? rack.map((id) => tileHtml(id, [selected === id ? 'selected' : '', fresh.has(id) ? 'fresh' : ''].join(' '))).join('')
-    : '<div class="rack-empty">All your tiles are on the table. Commit to win!</div>';
+    : placeOfMe() != null
+      ? `<div class="rack-empty">You finished ${ordinal(placeOfMe())}! You can keep watching the table here.</div>`
+      : '<div class="rack-empty">All your tiles are on the table. Commit to finish!</div>';
   $('rackCount').textContent = `${rack.length} tile${rack.length === 1 ? '' : 's'}`;
   if (!work) prevRack = rack.slice();
 }
@@ -685,16 +697,38 @@ function renderLobby() {
   $('leaveBtn').textContent = 'Leave';
 }
 
+const placeOfMe = () => {
+  const i = (S?.finished || []).indexOf(S?.you);
+  return i < 0 ? null : i + 1;
+};
+const medal = (place) => `<span class="medal m${place}">${ordinal(place)}</span>`;
+
+/** Who has finished so far this round, and in what place. */
+function renderFinishedStrip() {
+  const el = $('finishedStrip');
+  const done = S.phase === 'playing' ? S.finished || [] : [];
+  el.hidden = !done.length;
+  el.innerHTML = done.length
+    ? `<span class="muted">Finished</span>${done.map((id, i) => `<span class="fin ${id === S.you ? 'me' : ''}">${medal(i + 1)}${escapeHtml(id === S.you ? 'You' : nameOf(id))}</span>`).join('')}`
+    : '';
+}
+
 function renderOver() {
   work = null;
   prevRack = [];
   show('over');
   const r = S.result;
-  const won = r.winnerId === S.you;
-  $('overTitle').textContent = won ? 'You won the round! 🎉' : `${nameOf(r.winnerId)} wins the round`;
+  const placements = resultPlacements(r, S.players);
+  const mine = placements.find((p) => p.id === S.you);
+  $('overTitle').textContent = mine?.place === 1 ? 'You won the round! 🎉' : `You finished ${ordinal(mine?.place ?? placements.length)}`;
   const d = r.deltas[S.you] ?? 0;
-  $('overText').textContent = `${d > 0 ? '+' : ''}${d} points this round.`;
-  $('overScores').innerHTML = playersList((p) => `${p.score} pts`);
+  $('overText').textContent = `${d > 0 ? '+' : ''}${d} points this round${mine?.place === 1 ? '' : ` · ${nameOf(r.winnerId)} took the points`}.`;
+  const byId = Object.fromEntries(S.players.map((p) => [p.id, p]));
+  $('overScores').innerHTML = placements.map((pl) => {
+    const p = byId[pl.id];
+    const dd = r.deltas[pl.id] ?? 0;
+    return `<li class="${pl.id === S.you ? 'me' : ''}">${medal(pl.place)}${p.bot ? BOT_ICON : ''}${escapeHtml(p.name)}<span class="right">${dd > 0 ? '+' : ''}${dd} · ${p.score} pts</span></li>`;
+  }).join('');
 }
 
 window.addEventListener('resize', () => render());
@@ -710,8 +744,9 @@ document.addEventListener('touchmove', (e) => {
 
 let flashTimer2 = null;
 /** Full-screen flash + big banner, so "your turn" is obvious even when muted. */
-function flashYourTurn() {
+function flashYourTurn(text = 'Your turn') {
   const f = $('turnFlash');
+  f.querySelector('.turn-flash-banner').textContent = text;
   f.hidden = false;
   f.classList.remove('go');
   void f.offsetWidth;

@@ -50,6 +50,13 @@ test(`${GAMES} seeded all-bot games: valid commits, 106 tiles always, every game
     }
     assert.equal(s.phase, 'roundOver');
     assert.ok(s.result.winnerId);
+    // Placements: everyone exactly once, 1..n, finishers first in the order they went out.
+    const pl = s.result.placements;
+    assert.deepEqual(pl.map((p) => p.place), Array.from({ length: n }, (_, i) => i + 1));
+    assert.equal(new Set(pl.map((p) => p.id)).size, n);
+    assert.deepEqual(pl.filter((p) => p.how === 'out').map((p) => p.id), s.finished);
+    assert.equal(pl[0].id, s.result.winnerId);
+    assert.equal(Object.values(s.result.deltas).reduce((a, b) => a + b, 0), 0, 'points sum to zero');
   }
   assert.ok(commits > GAMES * 10, `bots should actually play (${commits} commits, ${draws} draws)`);
 });

@@ -36,6 +36,8 @@ export function tableCues(prev, next) {
       return out; // the start fanfare stands in for the first turn chime
     case 'commit':
       out.push({ sound: 'place' });
+      // Someone emptied their rack and play continues for the other places.
+      if (ev.out) out.push({ sound: 'playerOut', delay: 200 });
       lead = true;
       break;
     case 'draw':
@@ -48,14 +50,14 @@ export function tableCues(prev, next) {
       out.push({ sound: 'invalid' });
       break;
     case 'roundOver':
-      // The winning commit and the round end arrive together.
-      if (ev.reason === 'out') out.push({ sound: 'place' });
-      out.push({ sound: 'roundWon', delay: ev.reason === 'out' ? 250 : 0 });
+      // When a commit ended the round, the placement and the round end arrive together.
+      if (ev.viaCommit) out.push({ sound: 'place' });
+      out.push({ sound: 'roundWon', delay: ev.viaCommit ? 250 : 0 });
       return out;
   }
 
   if (next.phase === 'playing' && next.currentPlayerId && next.turnNumber !== prev.turnNumber) {
-    out.push({ sound: 'turnStart', delay: lead ? 450 : 0 });
+    out.push({ sound: 'turnStart', delay: lead ? (ev?.out ? 1100 : 450) : 0 });
   }
   return out;
 }
@@ -79,15 +81,25 @@ export function phoneCues(prev, next) {
   if ((ev?.type === 'draw' || ev?.type === 'timeout' || ev?.type === 'skip') && ev.playerId === me && ev.drew) {
     out.push({ sound: 'drew', haptic: 'tick' });
   }
+  // You just emptied your rack (mid-round, or with the move that ended it).
+  const justFinished = (next.finished || []).includes(me) && !(prev.finished || []).includes(me);
+  const place = (next.finished || []).indexOf(me) + 1;
+  if (justFinished) out.push({ sound: 'won', haptic: 'double', flash: true, flashText: `You finished ${ordinal(place)}!` });
   if (next.phase === 'roundOver' && prev.phase !== 'roundOver') {
-    const won = next.result?.winnerId === me;
-    out.push(won ? { sound: 'won', haptic: 'double' } : { sound: 'roundOver' });
+    if (!justFinished) out.push({ sound: 'roundOver' });
     return out;
   }
+  if (justFinished) return out;
   const myTurnNow = next.phase === 'playing' && next.currentPlayerId === me;
   const myTurnBefore = prev.phase === 'playing' && prev.currentPlayerId === me && prev.turnNumber === next.turnNumber;
   if (myTurnNow && !myTurnBefore) out.push({ sound: 'yourTurn', haptic: 'turn', flash: true, delay: out.length ? 300 : 0 });
   return out;
+}
+
+/** 1 -> "1st", 2 -> "2nd", ... */
+export function ordinal(n) {
+  const v = n % 100;
+  return n + (v >= 11 && v <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
 }
 
 /** Phone: the table's answer to your commit. */

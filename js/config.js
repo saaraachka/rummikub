@@ -88,6 +88,7 @@ export const SOUNDS = {
   draw:         { where: 'table', file: 'sounds/draw.mp3',          volume: 0.7 },
   invalid:      { where: 'table', file: 'sounds/invalid.mp3',       volume: 0.7 },
   roundWon:     { where: 'table', file: 'sounds/round-won.mp3',     volume: 0.9 },
+  playerOut:    { where: 'table', file: 'sounds/player-out.mp3',    volume: 0.85 },
   timerWarning: { where: 'table', file: 'sounds/timer-warning.mp3', volume: 0.7 },
   playerJoin:   { where: 'table', file: 'sounds/player-join.mp3',   volume: 0.6 },
   playerLeave:  { where: 'table', file: 'sounds/player-leave.mp3',  volume: 0.5 },
