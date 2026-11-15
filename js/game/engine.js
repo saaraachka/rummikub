@@ -17,7 +17,7 @@ export function createGame() {
   return {
     phase: 'lobby', // lobby | playing | roundOver
     settings: { timer: 0, strictJokers: true },
-    players: [], // [{id, name, score}]
+    players: [], // [{id, name, score, bot?: 'easy'|'normal'}]
     round: 0,
     pool: [],
     board: [], // [{id, tiles: string[]}]
@@ -35,14 +35,29 @@ export function createGame() {
 
 // ---------------------------------------------------------------- lobby
 
-export function addPlayer(state, { id, name }) {
+export const BOT_LEVELS = ['easy', 'normal'];
+
+/** Add a seat. Pass `bot: 'easy' | 'normal'` for a computer player; humans omit it. */
+export function addPlayer(state, { id, name, bot }) {
   if (state.phase !== 'lobby') throw new Error('Game already started');
   if (state.players.length >= MAX_PLAYERS) throw new Error('Table is full');
   if (state.players.some((p) => p.id === id)) return state;
+  if (bot !== undefined && !BOT_LEVELS.includes(bot)) throw new Error('Bad bot level');
   const s = clone(state);
-  s.players.push({ id, name: cleanName(name), score: 0 });
+  s.players.push({ id, name: cleanName(name), score: 0, ...(bot ? { bot } : {}) });
   return s;
 }
+
+export function setBotLevel(state, id, level) {
+  if (!BOT_LEVELS.includes(level)) throw new Error('Bad bot level');
+  const s = clone(state);
+  const p = s.players.find((p) => p.id === id);
+  if (!p?.bot) throw new Error('Not a bot');
+  p.bot = level;
+  return s;
+}
+
+export const isBot = (state, id) => !!state.players.find((p) => p.id === id)?.bot;
 
 export function renamePlayer(state, id, name) {
   const s = clone(state);
@@ -272,6 +287,7 @@ export function publicView(state) {
       id: p.id,
       name: p.name,
       score: p.score,
+      bot: p.bot ?? null,
       tileCount: state.racks[p.id]?.length ?? 0,
       melded: !!state.melded[p.id],
     })),

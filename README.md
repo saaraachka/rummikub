@@ -9,10 +9,11 @@ The game uses the standard 106-tile rummy rules (numbers 1–13 in four colors, 
 1. Open `/table/` on the iPad. It shows a 4-letter room code and a QR code.
 2. Everyone scans the QR code (or opens `/play/` and types the code) and enters a name.
    While the phone connects, a status line under the Join button says what's happening: "Connecting to room ABCD…", "Connected", or what to fix if it can't get through (wrong code, no internet, or "Couldn't reach the table — try joining the same Wi-Fi as the table").
-3. Pick a turn timer (off, 1 minute or 2 minutes), choose whether the **strict joker rule** is on (it is by default), and tap **Start game** on the table.
-4. On your turn your phone turns yellow. Drag tiles (or tap a tile, then tap where it should go) from your rack onto the board, rearrange existing sets, then tap **Commit**. **Reset** puts everything back the way it was at the start of your turn. **Draw** takes a tile and ends your turn.
-5. The table validates the move. If something is wrong your phone explains why ("Run 4-5-7 (red) isn't consecutive", "Your first meld totals 24 points; it needs at least 30") and you keep editing. The table also shows the message so everyone knows what happened.
-6. The first player to empty their rack wins the round. The table shows the scores and a **Next round** button; scores carry over until someone taps **Back to lobby**.
+3. Short on people? Tap **＋ Add bot** on the table for a computer player (see [Bots](#bots)). A game can start with one person and bots.
+4. Pick a turn timer (off, 1 minute or 2 minutes), choose whether the **strict joker rule** is on (it is by default), and tap **Start game** on the table.
+5. On your turn your phone turns yellow. Drag tiles (or tap a tile, then tap where it should go) from your rack onto the board, rearrange existing sets, then tap **Commit**. **Reset** puts everything back the way it was at the start of your turn. **Draw** takes a tile and ends your turn.
+6. The table validates the move. If something is wrong your phone explains why ("Run 4-5-7 (red) isn't consecutive", "Your first meld totals 24 points; it needs at least 30") and you keep editing. The table also shows the message so everyone knows what happened.
+7. The first player to empty their rack wins the round. The table shows the scores and a **Next round** button; scores carry over until someone taps **Back to lobby**.
 
 The table never shows anyone's tiles, only how many each player holds.
 
@@ -28,6 +29,27 @@ The table never shows anyone's tiles, only how many each player holds.
 - **Empty pool.** Once there's nothing left to draw, "Draw" becomes "Pass". If every player passes in a row, the round ends and the lowest rack value wins.
 - **Scoring.** Each loser subtracts the value of the tiles left in their rack (joker = 30). The winner gains the sum of those amounts.
 - **Absent players.** If the current player's phone is disconnected, the table shows a **Skip turn** button on their card (they draw a tile, as if they had drawn).
+
+## Bots
+
+Computer players fill empty seats so you can play, or test, with fewer than four people.
+
+- **Adding them.** In the table lobby, tap **＋ Add bot**. Each bot takes a seat like a person does (2–4 seats in total, people and bots combined), so one person plus one to three bots is a full game. Each bot row has an **Easy / Normal** switch and an **✕** to remove it. Bots are called "Robo Ada", "Robo Bix" and so on, with a robot icon in place of the connection dot everywhere they appear (table, phones, score table), so nobody mistakes a bot for a person whose phone has disconnected.
+- **Easy** makes its first meld from rack-only sets worth 30+. After that it plays new sets from its rack and adds single tiles to the ends of runs or into groups. It never rearranges the table, and draws when it can't play.
+- **Normal** does everything Easy does, and also rearranges the table. It splits a run to insert a tile (3-4-5-6-7 plus a 5 becomes 3-4-5 and 5-6-7). It also takes a tile off a group of four, the end of a run, or the middle of a long run, to complete a new set with tiles from its rack. Among the moves it finds, it plays the one that gets rid of the most points from its rack. In 300 seeded head-to-head games Normal beat Easy 281 times.
+- **Jokers.** Bots play jokers from their own rack, but never take jokers off the table, whichever joker rule is active. A joker that's already on the table keeps standing for the same tile.
+- **Same rules as everyone.** Bots run on the table, not on phones. A bot's move goes through exactly the same commit and validation code as a phone's move, so bots never get a shortcut, and an invalid bot move would show up as the usual red "move didn't work" banner. Bots also obey the turn timer and the empty-pool ending.
+- **Thinking.** The move search runs in a Web Worker, so the table never freezes. It stops after 1.5 seconds and plays the best move it found so far, or draws. If the worker doesn't answer within about 2.2 seconds, the table restarts it and the bot draws. The table shows "Robo Ada is thinking…" for a second or two before each bot move, then animates the move like a person's.
+
+### Watch mode (all bots)
+
+Open the table with `?bots=N` (N = 2–4), for example `…/table/?bots=4`, to watch an all-bot game play out. The game starts at once and a new round begins automatically six seconds after each one ends. Watch mode doesn't open a room or touch the saved game, so it works offline and won't disturb a real game on the same iPad. Extra flags:
+
+- `level=easy` or `level=normal` (default: alternating Normal and Easy)
+- `think=300` sets the pause before each bot move in milliseconds (default: 1–2 seconds)
+- `jokers=loose` turns the strict joker rule off
+
+`think=…` also works on a normal table, for example to make bots snappier while you test with one phone.
 
 ## Deploying to GitHub Pages
 
@@ -45,7 +67,7 @@ All paths are relative, so it works under any repository name or a custom domain
 You need Node.js 18 or newer. There are no dependencies to install.
 
 ```sh
-npm test            # rules, engine and connection-message unit tests (node:test)
+npm test            # rules, engine, bot and connection-message tests, plus a 300-game bot simulation (~30 s)
 npm run serve       # static server on http://localhost:8080 (any port: node scripts/serve.js 3000)
 ```
 
@@ -70,7 +92,8 @@ Drop `net=local` to test the real PeerJS path between tabs (internet required). 
 ### Other checks
 
 - `test/browser/peer-mock.html` (open it through the dev server) runs the networking module over the PeerJS transport against an in-memory fake of PeerJS and prints PASS/FAIL lines. It checks join, messaging both ways, rejoin with the same id, rejection, that a room code in use isn't stolen, that the STUN/TURN list from `js/config.js` reaches PeerJS, and that failures are classified correctly for the phone's status line.
-- Useful URL flags on the table: `fresh=1` ignores the saved game, `code=ABCD` asks for a specific room code. On any page, `relay=1` forces all traffic through TURN (see below).
+- Useful URL flags on the table: `fresh=1` ignores the saved game, `code=ABCD` asks for a specific room code, and `bots=4` starts watch mode (see [Bots](#bots)). On any page, `relay=1` forces all traffic through TURN (see below).
+- `test/bot-sim.test.js` plays several hundred seeded all-bot games headlessly through the real engine. It asserts that every bot commit passes validation, that all 106 tiles are accounted for after every turn, and that every game ends. Set `BOT_SIM_GAMES=2000 npm test` for a longer soak.
 
 ## How it works
 
@@ -87,6 +110,9 @@ js/net/transports.js  PeerJS transport and offline BroadcastChannel transport
 js/table/main.js      host controller and table rendering
 js/play/main.js       phone controller: rack, working board, drag and tap
 js/play/diagnose.js   connection status -> the message on the phone's join screen (pure)
+js/bot/search.js      bot move search: set packing, table moves, Easy/Normal (pure)
+js/bot/worker.js      Web Worker wrapper for the search
+js/bot/runner.js      table-side runner with the hard time limit
 js/ui/tile-view.js    tile markup shared by both screens
 vendor/               PeerJS 1.5.5 and qrcode-generator 2.0.4 (both MIT)
 test/                 unit tests and the browser check page

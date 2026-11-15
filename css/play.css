@@ -226,3 +226,5 @@ body { font-size: 16px; }
 .actions .btn { min-height: 56px; font-size: 18px; }
 .actions .btn.confirm { background: var(--bad); color: #fff; }
 .game:not(.my-turn) .actions .btn { opacity: 0.35; pointer-events: none; }
+
+.bot-icon { width: 20px; height: 20px; flex: none; color: var(--accent); --bot-eye: var(--felt-dark); }

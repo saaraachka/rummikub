@@ -39,3 +39,12 @@ export function tileEl(id, extraClass = '') {
 export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
+
+/** Small robot head used everywhere a bot is named. */
+export const BOT_ICON = `<svg class="bot-icon" viewBox="0 0 24 24" aria-label="bot" role="img">
+  <rect x="11" y="1.5" width="2" height="4" rx="1" fill="currentColor"/><circle cx="12" cy="2" r="1.8" fill="currentColor"/>
+  <rect x="3.5" y="6" width="17" height="14" rx="4" fill="currentColor"/>
+  <circle cx="9" cy="12.5" r="2.1" fill="var(--bot-eye, #0f3b3a)"/><circle cx="15" cy="12.5" r="2.1" fill="var(--bot-eye, #0f3b3a)"/>
+  <rect x="8.5" y="16" width="7" height="1.6" rx=".8" fill="var(--bot-eye, #0f3b3a)"/>
+  <rect x="1" y="10.5" width="2" height="5" rx="1" fill="currentColor"/><rect x="21" y="10.5" width="2" height="5" rx="1" fill="currentColor"/>
+</svg>`;

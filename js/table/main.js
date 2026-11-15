@@ -7,15 +7,21 @@ import { hostRoom } from '../net/room.js';
 import { transportFromUrl } from '../net/transports.js';
 import {
   createGame, addPlayer, renamePlayer, removePlayer, setTimer, setStrictJokers, startRound, commitTurn,
-  drawTile, reorderRack, resetToLobby, publicView, playerView, currentPlayerId,
-  MIN_PLAYERS, MAX_PLAYERS, TIMER_OPTIONS,
+  drawTile, reorderRack, resetToLobby, publicView, playerView, currentPlayerId, setBotLevel, strictJokersOn,
+  MIN_PLAYERS, MAX_PLAYERS, TIMER_OPTIONS, BOT_LEVELS,
 } from '../game/engine.js';
-import { tileHtml, escapeHtml } from '../ui/tile-view.js';
+import { tileHtml, escapeHtml, BOT_ICON } from '../ui/tile-view.js';
+import { createBotRunner } from '../bot/runner.js';
 import qrcode from '../../vendor/qrcode.mjs';
 
 const params = new URLSearchParams(location.search);
 const forcedCode = params.get('code'); // dev harness pins a code
+// Watch mode (?bots=2..4): an all-bot game for testing. No room, nothing saved.
+const WATCH = Math.min(4, Math.max(0, Number(params.get('bots')) || 0)) >= 2 ? Math.min(4, Number(params.get('bots'))) : 0;
+const WATCH_LEVEL = params.get('level'); // easy | normal | mix (default)
+const THINK_MS = params.has('think') ? Math.max(0, Number(params.get('think'))) : null; // fixed bot "thinking" delay
 const STORE_KEY = `${APP_ID}:host${forcedCode ? ':' + forcedCode : ''}`;
+const BOT_NAMES = ['Robo Ada', 'Robo Bix', 'Robo Cog', 'Robo Dot'];
 const $ = (id) => document.getElementById(id);
 
 // ------------------------------------------------------------------ state
@@ -28,6 +34,7 @@ let deadline = 0; // ms timestamp when current turn times out (0 = no timer)
 let deadlineTurn = -1;
 
 function save() {
+  if (WATCH) return;
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({ code: room?.code, game, seats, nextPid }));
   } catch {}
@@ -43,8 +50,10 @@ function load() {
 }
 
 const playerName = (pid) => game.players.find((p) => p.id === pid)?.name ?? 'Someone';
+const botLevel = (pid) => game.players.find((p) => p.id === pid)?.bot ?? null;
 const clientOf = (pid) => Object.keys(seats).find((c) => seats[c] === pid);
 const isOnline = (pid) => {
+  if (botLevel(pid)) return true;
   const c = clientOf(pid);
   return !!(c && room?.isConnected(c));
 };
@@ -52,6 +61,7 @@ const isOnline = (pid) => {
 // ------------------------------------------------------------------ boot
 
 async function boot() {
+  if (WATCH) return bootWatch();
   const saved = load();
   if (saved?.game) {
     game = saved.game;
@@ -149,12 +159,12 @@ function sanitizeSets(sets) {
 }
 
 function reply(clientId, msg) {
-  room.send(clientId, msg);
+  room?.send(clientId, msg);
 }
 
 function sendState(clientId) {
   const pid = seats[clientId];
-  if (!pid) return;
+  if (!pid || !room) return;
   room.send(clientId, {
     type: 'state',
     state: { ...playerView(game, pid), online: onlineMap() },
@@ -167,6 +177,7 @@ function onlineMap() {
 }
 
 function broadcastState() {
+  if (!room) return;
   for (const clientId of Object.keys(seats)) if (room.isConnected(clientId)) sendState(clientId);
 }
 
@@ -183,6 +194,8 @@ function commit({ broadcast }) {
   save();
   if (broadcast) broadcastState();
   render();
+  setTimeout(maybeRunBot, 0);
+  if (WATCH && game.phase === 'roundOver') scheduleWatchNextRound();
 }
 
 function tick() {
@@ -198,6 +211,8 @@ function tick() {
 // ------------------------------------------------------------------ lobby
 
 function setupLobby() {
+  setupLobbyControls();
+  if (!room) return;
   const url = new URL('../play/', location.href);
   url.searchParams.set('room', room.code);
   if (params.get('net') === 'local') url.searchParams.set('net', 'local');
@@ -210,6 +225,9 @@ function setupLobby() {
   $('joinUrl').textContent = short.host + short.pathname;
   $('roomCode').innerHTML = [...room.code].map((c) => `<span>${c}</span>`).join('');
   $('sideCode').textContent = room.code;
+}
+
+function setupLobbyControls() {
 
   $('timerOptions').innerHTML = TIMER_OPTIONS.map(
     (s) => `<button role="radio" data-s="${s}">${s ? `${s / 60} min` : 'Off'}</button>`,
@@ -234,7 +252,20 @@ function setupLobby() {
     commit({ broadcast: true });
   });
 
+  $('addBotBtn').addEventListener('click', () => {
+    if (game.players.length >= MAX_PLAYERS) return;
+    const name = BOT_NAMES.find((n) => !game.players.some((p) => p.name === n)) ?? `Robo ${game.players.length + 1}`;
+    game = addPlayer(game, { id: `b${++nextPid}`, name, bot: 'normal' });
+    commit({ broadcast: true });
+  });
+
   $('lobbyPlayers').addEventListener('click', (e) => {
+    const lvl = e.target.closest('button[data-level]');
+    if (lvl) {
+      game = setBotLevel(game, lvl.dataset.pid, lvl.dataset.level);
+      commit({ broadcast: true });
+      return;
+    }
     const b = e.target.closest('button.kick');
     if (!b) return;
     const pid = b.dataset.pid;
@@ -250,7 +281,7 @@ function setupLobby() {
   $('resetBtn').addEventListener('click', () => {
     if (!confirm('Start a brand-new table with a new room code? Everyone will need to rejoin.')) return;
     localStorage.removeItem(STORE_KEY);
-    room.close();
+    room?.close();
     const u = new URL(location.href);
     u.searchParams.delete('code');
     location.replace(u.href);
@@ -302,7 +333,10 @@ function render() {
   else {
     renderPlayers(v);
     renderBoard(v);
-    $('turnName').innerHTML = v.currentPlayerId ? `<span>${escapeHtml(playerName(v.currentPlayerId))}</span>'s turn` : '';
+    const cur = v.currentPlayerId;
+    $('turnName').innerHTML = !cur ? ''
+      : botLevel(cur) ? `${BOT_ICON}<span>${escapeHtml(playerName(cur))}</span> is thinking…`
+      : `<span>${escapeHtml(playerName(cur))}</span>'s turn`;
     $('poolCount').textContent = v.poolCount;
   }
   if (v.phase === 'roundOver') renderRoundOver(v);
@@ -310,8 +344,12 @@ function render() {
 }
 
 function renderLobby(v) {
-  const rows = v.players.map((p) => `
-    <li><span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span>${escapeHtml(p.name)}
+  const rows = v.players.map((p) => p.bot ? `
+    <li class="bot-row">${BOT_ICON}<span class="pname">${escapeHtml(p.name)}</span>
+      <span class="seg small-seg" role="radiogroup" aria-label="Difficulty for ${escapeHtml(p.name)}">${BOT_LEVELS.map((l) =>
+        `<button role="radio" data-pid="${p.id}" data-level="${l}" aria-checked="${p.bot === l}">${l === 'easy' ? 'Easy' : 'Normal'}</button>`).join('')}</span>
+      <button class="kick" data-pid="${p.id}" aria-label="Remove ${escapeHtml(p.name)}">✕</button></li>` : `
+    <li><span class="dot ${isOnline(p.id) ? 'on' : 'off'}"></span><span class="pname">${escapeHtml(p.name)}</span>
       ${p.score ? `<span class="score">${p.score} pts</span>` : ''}
       <button class="kick" data-pid="${p.id}" aria-label="Remove ${escapeHtml(p.name)}">✕</button></li>`);
   for (let i = v.players.length; i < MAX_PLAYERS; i++) rows.push(`<li class="empty">Waiting for player ${i + 1}…</li>`);
@@ -325,9 +363,10 @@ function renderLobby(v) {
   for (const b of $('jokerOptions').children) b.setAttribute('aria-checked', String((b.dataset.strict === '1') === v.settings.strictJokers));
   const enough = v.players.length >= MIN_PLAYERS;
   $('startBtn').disabled = !enough;
+  $('addBotBtn').disabled = v.players.length >= MAX_PLAYERS;
   $('lobbyHint').textContent = enough
     ? 'Everyone in? Start when ready. Late arrivals can join between games.'
-    : `Need at least ${MIN_PLAYERS} players to start.`;
+    : `Need at least ${MIN_PLAYERS} players to start. Short on people? Add a bot.`;
 }
 
 let lastPlayersHtml = '';
@@ -335,14 +374,16 @@ function renderPlayers(v) {
   const html = v.players.map((p) => {
     const online = isOnline(p.id);
     const current = p.id === v.currentPlayerId;
-    return `<li class="player ${current ? 'current' : ''}" data-pid="${p.id}">
+    const thinking = current && p.bot && botTurn === v.turnNumber;
+    return `<li class="player ${current ? 'current' : ''} ${p.bot ? 'is-bot' : ''}" data-pid="${p.id}">
       <div class="row">
-        <span class="dot ${online ? 'on' : 'off'}" title="${online ? 'connected' : 'disconnected'}"></span>
+        ${p.bot ? BOT_ICON : `<span class="dot ${online ? 'on' : 'off'}" title="${online ? 'connected' : 'disconnected'}"></span>`}
         <span class="name">${escapeHtml(p.name)}</span>
         <span class="count">${p.tileCount}<small>tiles</small></span>
       </div>
       <div class="meta">
-        <span class="turn-tag">Playing</span>
+        <span class="turn-tag">${thinking ? 'Thinking<i class="dots"><b>.</b><b>.</b><b>.</b></i>' : 'Playing'}</span>
+        ${p.bot ? `<span class="badge">${p.bot === 'easy' ? 'Easy bot' : 'Bot'}</span>` : ''}
         ${online ? '' : '<span class="badge off">offline</span>'}
         ${p.melded ? '' : '<span class="badge">no meld</span>'}
         ${v.round > 1 || p.score ? `<span>${p.score} pts</span>` : ''}
@@ -465,8 +506,79 @@ function renderEvent(v) {
   bannerTimer = setTimeout(() => b.classList.remove('show'), ev.type === 'invalid' ? 4500 : 2800);
 }
 
+// ------------------------------------------------------------------ bots
+
+// Bots act on the table, through exactly the same commitTurn/drawTile path as
+// a phone's move. The search runs in a Web Worker with a hard time limit, and a
+// short "thinking" pause keeps the game followable.
+const bots = createBotRunner({ budgetMs: 1500 });
+let botTurn = null; // turnNumber the current bot is working on
+
+async function maybeRunBot() {
+  if (game.phase !== 'playing') return;
+  const pid = currentPlayerId(game);
+  const level = botLevel(pid);
+  if (!level || botTurn === game.turnNumber) return;
+  const turn = (botTurn = game.turnNumber);
+  render(); // show "thinking…"
+  const started = Date.now();
+  const pause = THINK_MS ?? 1000 + Math.random() * 1000;
+  const move = await bots.think({
+    board: game.board.map((b) => b.tiles),
+    rack: game.racks[pid],
+    hasMelded: game.melded[pid],
+    strictJokers: strictJokersOn(game),
+    level,
+  });
+  const left = pause - (Date.now() - started);
+  if (left > 0) await new Promise((r) => setTimeout(r, left));
+  // The turn may have ended meanwhile (timer ran out, table went back to the lobby).
+  if (game.phase !== 'playing' || game.turnNumber !== turn) return;
+  if (move) {
+    const r = commitTurn(game, pid, move.sets);
+    game = r.state;
+    if (!r.ok) {
+      console.error('Bot move rejected by the rules engine:', r.errors, move);
+      game = drawTile(game, pid, 'draw').state;
+    }
+  } else {
+    game = drawTile(game, pid, 'draw').state;
+  }
+  commit({ broadcast: true });
+}
+
+function watchGame() {
+  let g = createGame();
+  for (let i = 0; i < WATCH; i++) {
+    const level = WATCH_LEVEL === 'easy' || WATCH_LEVEL === 'normal' ? WATCH_LEVEL : i % 2 ? 'easy' : 'normal';
+    g = addPlayer(g, { id: `b${i + 1}`, name: BOT_NAMES[i], bot: level });
+  }
+  if (params.get('jokers') === 'loose') g = setStrictJokers(g, false);
+  return startRound(g);
+}
+
+function bootWatch() {
+  $('boot').hidden = true;
+  game = watchGame();
+  $('sideCode').parentElement.innerHTML = `Watch mode · ${WATCH} bots<br><small>Next round starts by itself</small>`;
+  $('menuBtn').hidden = true;
+  setupLobbyControls();
+  commit({ broadcast: false });
+  setInterval(tick, 250);
+}
+
+let watchTimer = null;
+function scheduleWatchNextRound() {
+  clearTimeout(watchTimer);
+  watchTimer = setTimeout(() => {
+    if (game.phase !== 'roundOver') return;
+    game = startRound(game);
+    commit({ broadcast: false });
+  }, 6000);
+}
+
 // Test hook for the offline bench / automated tests only.
-if (params.get('net') === 'local') {
+if (params.get('net') === 'local' || WATCH) {
   window.__host = {
     get game() { return game; },
     set game(g) { game = g; commit({ broadcast: true }); },

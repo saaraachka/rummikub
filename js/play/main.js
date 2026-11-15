@@ -8,7 +8,7 @@ import { diagnose } from './diagnose.js';
 import { joinRoom, normalizeCode } from '../net/room.js';
 import { analyzeSet, meldPointsFromRack, INITIAL_MELD_POINTS } from '../game/rules.js';
 import { sortByColor, sortByNumber } from '../game/tiles.js';
-import { tileHtml, escapeHtml } from '../ui/tile-view.js';
+import { tileHtml, escapeHtml, BOT_ICON } from '../ui/tile-view.js';
 
 const params = new URLSearchParams(location.search);
 const slot = params.get('slot') || ''; // lets several tabs in one browser be different players
@@ -537,7 +537,8 @@ function render() {
   $('offline').hidden = conn.status === 'connected';
 
   const cur = S.currentPlayerId;
-  $('turnText').textContent = mine ? 'Your turn' : `${nameOf(cur)}'s turn`;
+  const curBot = S.players.find((p) => p.id === cur)?.bot;
+  $('turnText').textContent = mine ? 'Your turn' : curBot ? `${nameOf(cur)} (bot) is thinking…` : `${nameOf(cur)}'s turn`;
   $('subText').textContent = mine
     ? (pending ? 'Checking with the table…' : S.hasMelded ? 'Play tiles, then commit' : `First meld: ${INITIAL_MELD_POINTS}+ points from your rack`)
     : `You're ${nameOf(S.you)} · ${S.hasMelded ? 'melded' : 'no meld yet'}`;
@@ -624,7 +625,7 @@ function renderTimer() {
 setInterval(renderTimer, 250);
 
 function playersList(extra) {
-  return S.players.map((p) => `<li class="${p.id === S.you ? 'me' : ''}"><span class="dot ${S.online?.[p.id] ? 'on' : 'off'}"></span>${escapeHtml(p.name)}<span class="right">${extra(p)}</span></li>`).join('');
+  return S.players.map((p) => `<li class="${p.id === S.you ? 'me' : ''}">${p.bot ? BOT_ICON : `<span class="dot ${S.online?.[p.id] ? 'on' : 'off'}"></span>`}${escapeHtml(p.name)}${p.bot ? ` <small class="muted">${p.bot === 'easy' ? 'easy bot' : 'bot'}</small>` : ''}<span class="right">${extra(p)}</span></li>`).join('');
 }
 
 function renderLobby() {

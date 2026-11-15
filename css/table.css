@@ -225,8 +225,8 @@ body {
 @keyframes pop-in { from { transform: scale(0.9); opacity: 0; } }
 
 .banner {
-  position: absolute; top: 2.2vh; left: 50%;
-  transform: translate(-50%, -160%);
+  position: absolute; bottom: 3vh; left: 50%; z-index: 2;
+  transform: translate(-50%, 220%);
   max-width: 90%;
   padding: 1.8vh 3.2vh;
   border-radius: 99px;
@@ -278,3 +278,22 @@ body {
 .scores .pos { color: var(--good); }
 .scores .neg { color: #ff9a9d; }
 .overlay-actions { display: flex; gap: 2vh; justify-content: center; margin-top: 4vh; }
+
+/* ---------------------------------------------------------------- bots */
+
+.bot-icon { width: 1.1em; height: 1.1em; flex: none; color: var(--accent); --bot-eye: var(--felt-dark); }
+.lobby-players li .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lobby-players li.bot-row .bot-icon { width: 3.4vh; height: 3.4vh; }
+.lobby-players li.bot-row .seg { margin-left: auto; }
+.lobby-players li.bot-row .seg + .kick { margin-left: 1vh; }
+.small-seg button { min-height: 4.4vh; padding: 0 1.6vh; font-size: 1.9vh; }
+.add-bot { align-self: flex-start; min-height: 5.6vh; font-size: 2.2vh; margin-top: -1vh; }
+.lobby-players { min-height: 0; }
+
+.player .row .bot-icon { width: 2.4vh; height: 2.4vh; }
+.player.current .bot-icon { color: #8a6a00; --bot-eye: var(--ink); }
+.turn-name .bot-icon { width: 4.2vh; height: 4.2vh; vertical-align: -0.6vh; margin-right: 1vh; }
+.dots b { font-weight: 900; animation: dot 1.2s infinite; }
+.dots b:nth-child(2) { animation-delay: 0.2s; }
+.dots b:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot { 0%, 60%, 100% { opacity: 0.2; } 30% { opacity: 1; } }
