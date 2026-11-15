@@ -18,9 +18,11 @@
   let n = 0;
   window.Peer = class {
     constructor(id, opts) {
-      if (typeof id !== 'string') id = 'anon' + (++n);
+      if (typeof id !== 'string') { opts = id; id = 'anon' + (++n); }
+      window.lastPeerOpts = opts;
       this.id = id; this.h = {}; this.destroyed = false; this.disconnected = false;
       setTimeout(() => {
+        if (window.failMode === 'network') return this.fire('error', { type: 'network' });
         if (registry.has(id)) return this.fire('error', { type: 'unavailable-id' });
         registry.set(id, this); this.fire('open', id);
       }, 5);
@@ -29,6 +31,7 @@
     fire(ev, ...a) { (this.h[ev] || []).forEach((f) => f(...a)); }
     connect(id) {
       const c = new FakeConn(this);
+      if (window.failMode === 'silent') return c; // broker fine, direct link never opens
       setTimeout(() => {
         const host = registry.get(id);
         if (!host) return this.fire('error', { type: 'peer-unavailable' });
@@ -84,6 +87,24 @@
     await wait(300);
     check('missing room does not connect', ghost.status !== 'connected');
     ghost.close();
+
+    // ICE servers from js/config.js reach new Peer().
+    const { peerOptions } = await import('../../js/config.js');
+    const opts = peerOptions('?relay=1');
+    const probe = peerTransport(opts);
+    const c2 = await probe.connect('mock-room-abcd');
+    check('iceServers passed to PeerJS', window.lastPeerOpts?.config?.iceServers?.[0]?.urls === 'stun:stun.l.google.com:19302');
+    check('?relay=1 forces TURN relay', window.lastPeerOpts?.config?.iceTransportPolicy === 'relay');
+    c2.close();
+
+    // Failure classification used by the phone's diagnostics line.
+    window.failMode = 'network';
+    const e1 = await probe.connect('mock-room-abcd').then(() => null, (e) => e.code);
+    check(`no broker -> broker-unreachable (${e1})`, e1 === 'broker-unreachable');
+    window.failMode = 'silent';
+    const e2 = await probe.connect('mock-room-abcd', { timeoutMs: 200 }).then(() => null, (e) => e.code);
+    check(`direct link never opens -> p2p-failed (${e2})`, e2 === 'p2p-failed');
+    window.failMode = null;
   } catch (e) {
     log.push('ERROR ' + e.stack);
   }

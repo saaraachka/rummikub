@@ -8,7 +8,8 @@ The game uses the standard 106-tile rummy rules (numbers 1–13 in four colors, 
 
 1. Open `/table/` on the iPad. It shows a 4-letter room code and a QR code.
 2. Everyone scans the QR code (or opens `/play/` and types the code) and enters a name.
-3. Pick a turn timer (off, 1 minute or 2 minutes) and tap **Start game** on the table.
+   While the phone connects, a status line under the Join button says what's happening: "Connecting to room ABCD…", "Connected", or what to fix if it can't get through (wrong code, no internet, or "Couldn't reach the table — try joining the same Wi-Fi as the table").
+3. Pick a turn timer (off, 1 minute or 2 minutes), choose whether the **strict joker rule** is on (it is by default), and tap **Start game** on the table.
 4. On your turn your phone turns yellow. Drag tiles (or tap a tile, then tap where it should go) from your rack onto the board, rearrange existing sets, then tap **Commit**. **Reset** puts everything back the way it was at the start of your turn. **Draw** takes a tile and ends your turn.
 5. The table validates the move. If something is wrong your phone explains why ("Run 4-5-7 (red) isn't consecutive", "Your first meld totals 24 points; it needs at least 30") and you keep editing. The table also shows the message so everyone knows what happened.
 6. The first player to empty their rack wins the round. The table shows the scores and a **Next round** button; scores carry over until someone taps **Back to lobby**.
@@ -20,7 +21,9 @@ The table never shows anyone's tiles, only how many each player holds.
 - **Sets.** A group is 3–4 tiles of one number in different colors. A run is 3+ consecutive numbers in one color; 1 does not follow 13.
 - **Jokers** stand in for any tile. In a run, where you place a joker decides what it stands for: `J 4 5` makes the joker a 3, `4 5 J` makes it a 6. If the tiles aren't laid out in order, the game sorts them, fills gaps with jokers first, and puts leftover jokers on the high end (or the low end if the run already reaches 13). When a set like `7 J J` could be read as either a group or a run, it takes whichever reading scores more.
 - **Initial meld.** Your first play must be worth at least 30 points using only tiles from your rack, and you can't touch the sets already on the table in that turn. Jokers count as the tile they represent.
-- **After melding** you can rearrange anything on the table, as long as every set is valid when you commit and you've added at least one tile from your rack. Tiles that were on the table can't go back to your rack. Jokers on the table can be moved like any other tile under that same rule (this is slightly looser than the official joker-retrieval rule, which most home games play anyway).
+- **After melding** you can rearrange anything on the table, as long as every set is valid when you commit and you've added at least one tile from your rack. Tiles that were on the table can't go back to your rack.
+- **Taking a joker from the table (strict joker rule, on by default).** You can only take a joker that's already on the table by playing, from your rack, the exact tile it stands for. If the joker is in a group of 3, either of the two missing colors will do; in a group of 4 it's the one missing color. The joker you take must be played in a new or existing set in the same turn (it can never go into your rack), and you can't take jokers at all before your initial meld. A joker that keeps standing for the same tile can still move, so splitting a run or adding to a set that contains a joker is fine. The table checks all of this when you commit and explains what's wrong, for example "To take the joker that stands for black 6, you must play a black 6 from your rack in its place" or "The joker you took from the table must be played in a set this turn".
+- **Loose joker rule (lobby toggle off).** Jokers on the table can be moved like any other tile, as long as every set is valid at the end of the turn. Many home games play this way.
 - **Drawing.** If you can't or won't play, draw one tile and your turn ends. If the timer runs out, you draw one tile and any unfinished changes are discarded.
 - **Empty pool.** Once there's nothing left to draw, "Draw" becomes "Pass". If every player passes in a row, the round ends and the lowest rack value wins.
 - **Scoring.** Each loser subtracts the value of the tiles left in their rack (joker = 30). The winner gains the sum of those amounts.
@@ -42,7 +45,7 @@ All paths are relative, so it works under any repository name or a custom domain
 You need Node.js 18 or newer. There are no dependencies to install.
 
 ```sh
-npm test            # rule and engine unit tests (node:test)
+npm test            # rules, engine and connection-message unit tests (node:test)
 npm run serve       # static server on http://localhost:8080 (any port: node scripts/serve.js 3000)
 ```
 
@@ -66,8 +69,8 @@ Drop `net=local` to test the real PeerJS path between tabs (internet required). 
 
 ### Other checks
 
-- `test/browser/peer-mock.html` (open it through the dev server) runs the networking module over the PeerJS transport against an in-memory fake of PeerJS and prints PASS/FAIL lines. It checks join, messaging both ways, rejoin with the same id, rejection, and that a room code in use isn't stolen.
-- Useful URL flags on the table: `fresh=1` ignores the saved game, `code=ABCD` asks for a specific room code.
+- `test/browser/peer-mock.html` (open it through the dev server) runs the networking module over the PeerJS transport against an in-memory fake of PeerJS and prints PASS/FAIL lines. It checks join, messaging both ways, rejoin with the same id, rejection, that a room code in use isn't stolen, that the STUN/TURN list from `js/config.js` reaches PeerJS, and that failures are classified correctly for the phone's status line.
+- Useful URL flags on the table: `fresh=1` ignores the saved game, `code=ABCD` asks for a specific room code. On any page, `relay=1` forces all traffic through TURN (see below).
 
 ## How it works
 
@@ -75,7 +78,7 @@ Drop `net=local` to test the real PeerJS path between tabs (internet required). 
 index.html            landing page
 table/  play/         the two entry points
 dev.html              offline test bench
-js/config.js          game name and app id (namespaces PeerJS ids and storage)
+js/config.js          game name, app id, and WebRTC STUN/TURN servers
 js/game/tiles.js      tile ids, deck, shuffle, sorting           (pure)
 js/game/rules.js      set analysis, joker handling, turn check   (pure)
 js/game/engine.js     state machine: deal, commit, draw, score   (pure)
@@ -83,6 +86,7 @@ js/net/room.js        reusable host/client room layer
 js/net/transports.js  PeerJS transport and offline BroadcastChannel transport
 js/table/main.js      host controller and table rendering
 js/play/main.js       phone controller: rack, working board, drag and tap
+js/play/diagnose.js   connection status -> the message on the phone's join screen (pure)
 js/ui/tile-view.js    tile markup shared by both screens
 vendor/               PeerJS 1.5.5 and qrcode-generator 2.0.4 (both MIT)
 test/                 unit tests and the browser check page
@@ -121,11 +125,28 @@ conn.on('message', (msg) => {});
 conn.send(msg);
 ```
 
-Clients reconnect with backoff, immediately when the page becomes visible again, and whenever the host goes quiet for 10 seconds; both sides heartbeat every 3 seconds, which is what lets the table show a player as offline promptly. Pass `transport: localTransport()` for offline development, or `transport: peerTransport({ host, port, config: { iceServers } })` to use your own PeerJS server or TURN servers.
+Clients reconnect with backoff, immediately when the page becomes visible again, and whenever the host goes quiet for 10 seconds; both sides heartbeat every 3 seconds, which is what lets the table show a player as offline promptly. Pass `transport: localTransport()` for offline development, or `transport: peerTransport({ host, port, config: { iceServers } })` to use your own PeerJS server or TURN servers (this game builds those options with `peerOptions()` from `js/config.js`). Status changes after a failure carry `{ error, attempt }`, where `error` is one of `not-found`, `broker-unreachable`, `p2p-failed`, `lost`, `no-welcome` or `unsupported`; `js/play/diagnose.js` shows one way to turn that into a message for players.
+
+## Connection reliability: STUN and TURN
+
+Phones talk to the table directly over WebRTC. To find each other, devices ask a STUN server for their public address; the default is Google's free public STUN server (`stun.l.google.com:19302`), and on ordinary home Wi-Fi that's all you need.
+
+Some networks block direct device-to-device traffic: guest Wi-Fi with "client isolation", many office and school networks, and some mobile carriers if a phone is on cellular data. A **TURN** server fixes this by relaying the traffic. The app already lists PeerJS's shared community TURN servers as a best-effort fallback, but for reliable play on tricky networks add your own:
+
+1. Sign up for a free TURN service, for example [Metered](https://www.metered.ca/) or [ExpressTURN](https://www.expressturn.com/). Game messages are tiny, so a free tier is plenty.
+2. Open `js/config.js`, uncomment the `MY_TURN` entry, and paste in the `turn:`/`turns:` URLs, username and credential from the provider's dashboard.
+3. Commit and push. GitHub Pages serves the update within a minute or so.
+4. To confirm it works, open the table with `?relay=1` (for example `…/table/?relay=1`). The QR code carries the flag to the phones, and every connection is forced through TURN, so if the phones still connect your relay is set up correctly. Drop the flag for normal play.
+
+Because this is a static site, anything in `js/config.js` is visible to anyone who opens the page. Use a free or capped account rather than one billed per gigabyte, and rotate the credential if you ever see usage you don't recognize.
+
+When a phone can't get through, its join screen tells the player why instead of spinning forever: no table with that code, no internet connection, the table turned it away (the game already started or the table is full), or "Couldn't reach the table — try joining the same Wi-Fi as the table" when the direct connection fails. If the link drops mid-game, the same message replaces the "Reconnecting…" banner once it's clear something is wrong.
 
 ## Troubleshooting
 
-- **Phones can't connect even though the code is right.** WebRTC between devices on the same Wi-Fi almost always works, but some guest or corporate networks block peer-to-peer traffic. Try a home network or a phone hotspot. If you need to get through strict networks, add a TURN server via `peerTransport({ config: { iceServers: [...] } })` in `js/net/transports.js`.
+- **"Couldn't reach the table — try joining the same Wi-Fi as the table".** The phone found the room but couldn't open a direct connection. Put the phone on the same Wi-Fi as the iPad (not cellular data). If everyone already is, the network probably isolates devices from each other; try a home network or a phone hotspot, or add a TURN server (see above).
+- **"No table found for room …".** The code is wrong, or the table page isn't open (or was reloaded and got a new code). Check the code on the TV.
+- **"Can't reach the internet".** The phone can't reach the PeerJS connection server. Check its Wi-Fi or mobile data.
 - **"Couldn't open the room".** The table needs to reach the free public PeerJS broker (`0.peerjs.com`) to register the room code. Check the iPad's internet connection. Once everyone has joined, play continues over the direct connections even if the broker hiccups.
 - **The iPad goes to sleep.** The table asks for a screen wake lock when the game starts (Safari 16.4+). If your iPad still dims, set Settings → Display & Brightness → Auto-Lock to Never while you play.
 - **Someone's phone died.** Their seat and rack are kept. They can rejoin by opening the join link again in the same browser on the same phone; on a different device they would be a new player, so use **Skip turn** on the table until the round ends.

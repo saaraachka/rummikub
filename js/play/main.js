@@ -2,7 +2,9 @@
 // sends, keeps a private working copy of the board during your turn, and
 // sends the finished board to the table for validation.
 
-import { APP_ID } from '../config.js';
+import { APP_ID, peerOptions } from '../config.js';
+import { transportFromUrl } from '../net/transports.js';
+import { diagnose } from './diagnose.js';
 import { joinRoom, normalizeCode } from '../net/room.js';
 import { analyzeSet, meldPointsFromRack, INITIAL_MELD_POINTS } from '../game/rules.js';
 import { sortByColor, sortByNumber } from '../game/tiles.js';
@@ -42,14 +44,6 @@ function show(id) {
   for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
 }
 
-function showWait(title, text = '', icon = 'spin') {
-  show('wait');
-  $('waitTitle').textContent = title;
-  $('waitText').textContent = text;
-  $('waitIcon').className = `spinner ${icon === 'done' ? 'done' : icon === 'bad' ? 'bad' : ''}`;
-  if (icon !== 'done') $('waitPlayers').innerHTML = '';
-}
-
 // ------------------------------------------------------------------ join
 
 function initJoin() {
@@ -59,12 +53,6 @@ function initJoin() {
   $('codeInput').value = roomParam || session?.room || '';
   $('nameInput').value = nameParam || store.get(NAME_KEY) || '';
 
-  // Coming back to a room we were in (refresh, reopened tab): rejoin straight away.
-  if (session?.room && (!roomParam || roomParam === session.room)) return start(session.room, session.name);
-  if (roomParam && nameParam && params.has('autojoin')) return start(roomParam, nameParam);
-
-  show('join');
-  if (roomParam) $('nameInput').focus();
   $('joinForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const code = normalizeCode($('codeInput').value);
@@ -74,6 +62,29 @@ function initJoin() {
     start(code, name);
   });
   $('codeInput').addEventListener('input', (e) => (e.target.value = normalizeCode(e.target.value)));
+  $('cancelJoin').addEventListener('click', () => {
+    conn?.close();
+    conn = null;
+    store.del(SESSION_KEY);
+    showDiag({ tone: 'wait', text: '' });
+    setJoining(false);
+  });
+
+  show('join');
+  // Coming back to a room we were in (refresh, reopened tab): rejoin straight away.
+  if (session?.room && (!roomParam || roomParam === session.room)) return start(session.room, session.name);
+  if (roomParam && nameParam && params.has('autojoin')) return start(roomParam, nameParam);
+  if (roomParam) $('nameInput').focus();
+}
+
+/** Lock the form while a join is in flight; the diagnostics line says what's happening. */
+function setJoining(on) {
+  $('codeInput').disabled = on;
+  $('nameInput').disabled = on;
+  $('joinBtn').disabled = on;
+  $('joinBtn').textContent = on ? 'Connecting…' : 'Join table';
+  $('cancelJoin').hidden = !on;
+  if (!on) $('diag').hidden = !$('diag').classList.contains('bad'); // keep a failure reason visible
 }
 
 function start(code, name) {
@@ -83,10 +94,15 @@ function start(code, name) {
   u.searchParams.set('room', code);
   u.searchParams.delete('autojoin');
   history.replaceState(null, '', u);
-  showWait('Connecting…', `Room ${code}`);
-  conn = joinRoom({ appId: APP_ID, code, hello: { name }, slot });
+  $('codeInput').value = code;
+  $('nameInput').value = name;
+  $('joinError').textContent = '';
+  show('join');
+  setJoining(true);
+  conn = joinRoom({ appId: APP_ID, code, hello: { name }, slot, transport: transportFromUrl(location.search, peerOptions()) });
   conn.on('status', onStatus);
   conn.on('message', onMessage);
+  showDiag(diagnose('connecting', null, { code }));
 }
 
 function leave() {
@@ -99,22 +115,33 @@ function leave() {
 }
 $('leaveBtn').addEventListener('click', leave);
 
+function showDiag(d) {
+  for (const id of ['diag', 'waitDiag']) {
+    const el = $(id);
+    el.className = `diag ${d.tone}`;
+    el.querySelector('.dot').className = `dot ${d.tone === 'ok' ? 'on' : d.tone === 'bad' ? 'off' : 'wait'}`;
+    el.lastElementChild.textContent = d.text;
+  }
+  $('diag').hidden = !d.text;
+  // Once in the lobby, only show the line when something is wrong.
+  $('waitDiag').hidden = !d.text || d.tone === 'ok';
+  $('offline').textContent = d.tone === 'bad' ? d.text : 'Reconnecting… your rack is safe.';
+}
+
 function onStatus(status, detail) {
+  if (!conn) return;
   const online = status === 'connected';
+  showDiag(diagnose(status, detail, { code: conn.code, lastError: conn.lastError, attempt: conn.attempt }));
   $('connDot').className = `dot ${online ? 'on' : status === 'rejected' ? 'off' : 'wait'}`;
   $('offline').hidden = online || !S;
   if (status === 'rejected') {
     store.del(SESSION_KEY);
     S = null;
-    showWait("Couldn't join", detail || 'The table turned this phone away.', 'bad');
-    $('leaveBtn').textContent = 'Back';
+    conn = null;
+    show('join');
+    setJoining(false);
     return;
   }
-  if (status === 'not-found' && !S) {
-    showWait(`Looking for room ${conn.code}…`, 'Make sure the table screen is open. Still trying.', 'spin');
-    return;
-  }
-  if (!S && status !== 'connected') showWait('Connecting…', `Room ${conn.code}`);
   if (online) conn.send({ type: 'sync' });
   render();
 }
@@ -607,7 +634,8 @@ function renderLobby() {
   $('waitIcon').className = 'spinner done';
   $('waitTitle').textContent = `You're in, ${nameOf(S.you)}!`;
   const t = S.settings.timer;
-  $('waitText').textContent = `Waiting for the table to start the game.${t ? ` Turn timer: ${t / 60} min.` : ''}`;
+  $('waitText').textContent = `Waiting for the table to start the game.${t ? ` Turn timer: ${t / 60} min.` : ''}` +
+    (S.settings.strictJokers ? ' Strict joker rule: take a table joker only by swapping in the exact tile.' : ' Jokers on the table can be moved freely.');
   $('waitPlayers').innerHTML = playersList((p) => (p.score ? `${p.score} pts` : ''));
   $('leaveBtn').textContent = 'Leave';
 }

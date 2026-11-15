@@ -2,7 +2,7 @@
 // here takes plain data and returns plain data, so it can be unit-tested
 // in Node and shared by the host (authoritative) and phones (live hints).
 
-import { parseTile, tileLabel, isTileId, MIN_NUMBER, MAX_NUMBER } from './tiles.js';
+import { parseTile, tileLabel, isTileId, isJoker, COLORS, MIN_NUMBER, MAX_NUMBER } from './tiles.js';
 
 export const MIN_SET_SIZE = 3;
 export const MAX_GROUP_SIZE = 4;
@@ -161,6 +161,98 @@ export function validateBoard(sets) {
 
 const multisetKey = (ids) => [...ids].sort().join(',');
 
+// ---------------------------------------------------------------- jokers
+
+/**
+ * What each joker in a set stands for. Returns a Map of joker id to
+ *   {type: 'run', color, num}            exactly one tile, or
+ *   {type: 'group', num, colors: [...]}  any of the colors the group is missing.
+ * Empty map if the set is invalid.
+ */
+export function jokerRoles(ids) {
+  const roles = new Map();
+  const a = analyzeSet(ids);
+  if (!a.valid) return roles;
+  const tiles = a.ordered.map(parseTile);
+  const real = tiles.filter((t) => !t.joker);
+  if (a.type === 'run') {
+    tiles.forEach((t, i) => {
+      if (t.joker) roles.set(t.id, { type: 'run', color: real[0].color, num: a.numbers[i] });
+    });
+  } else {
+    const present = new Set(real.map((t) => t.color));
+    const colors = COLORS.filter((c) => !present.has(c));
+    for (const t of tiles) if (t.joker) roles.set(t.id, { type: 'group', num: real[0].num, colors });
+  }
+  return roles;
+}
+
+const roleColors = (r) => (r.type === 'run' ? [r.color] : r.colors);
+const sameRole = (a, b) => a.num === b.num && roleColors(a).some((c) => roleColors(b).includes(c));
+const roleLabel = (r) => `${roleColors(r).join(' or ')} ${r.num}`;
+const fillsRole = (id, r) => {
+  const t = parseTile(id);
+  return !t.joker && t.num === r.num && roleColors(r).includes(t.color);
+};
+
+/**
+ * Official joker rule. A joker already on the table may only change what it
+ * stands for (or leave its set) if it is "retrieved": the player plays the
+ * exact tile it represented from their rack (in a group of 3, either missing
+ * color will do). The joker can't go back to the rack, so it must end up in a
+ * set this turn, and jokers can't be retrieved before the initial meld.
+ * Jokers that keep standing for the same tile can move freely, so splitting
+ * or extending a set that contains a joker is fine.
+ *
+ * Returns an array of {message, setIndex?} errors (empty when fine).
+ */
+export function checkJokerRetrieval({ before, sets, analyses, played, hasMelded }) {
+  const beforeRoles = new Map();
+  for (const s of before) for (const [id, r] of jokerRoles(s)) beforeRoles.set(id, r);
+  if (!beforeRoles.size) return [];
+
+  const afterLoc = new Map();
+  sets.forEach((s, i) => s.forEach((id) => isJoker(id) && afterLoc.set(id, i)));
+
+  const retrieved = []; // [{id, role, setIndex}]
+  for (const [id, role] of beforeRoles) {
+    if (!afterLoc.has(id)) {
+      return [{ message: hasMelded
+        ? 'The joker you took from the table must be played in a set this turn'
+        : "You can't take a joker from the table before your initial meld" }];
+    }
+    const i = afterLoc.get(id);
+    if (!analyses[i].valid) continue; // that set is already reported as invalid
+    const now = jokerRoles(sets[i]).get(id);
+    if (!sameRole(role, now)) retrieved.push({ id, role, setIndex: i });
+  }
+  if (!retrieved.length) return [];
+  if (!hasMelded) {
+    return [{ message: "You can't take a joker from the table before your initial meld", setIndex: retrieved[0].setIndex }];
+  }
+
+  // Each retrieved joker needs its own replacement tile from the rack.
+  const candidates = played.filter((id) => !isJoker(id));
+  const used = new Set();
+  const assign = (k) => {
+    if (k === retrieved.length) return true;
+    for (const id of candidates) {
+      if (used.has(id) || !fillsRole(id, retrieved[k].role)) continue;
+      used.add(id);
+      if (assign(k + 1)) return true;
+      used.delete(id);
+    }
+    return false;
+  };
+  if (assign(0)) return [];
+  // Name the first joker that can't be covered on its own (good enough for a message).
+  const bad = retrieved.find((r) => !candidates.some((id) => fillsRole(id, r.role))) || retrieved[0];
+  return [{
+    message: `To take the joker that stands for ${roleLabel(bad.role)}, you must play a ${roleLabel(bad.role)} from your rack in its place`,
+    setIndex: bad.setIndex,
+  }];
+}
+
 /**
  * End-of-turn check. Compares the board before the turn with the board the
  * player wants to commit.
@@ -170,6 +262,7 @@ const multisetKey = (ids) => [...ids].sort().join(',');
  * @param {string[][]} p.after    sets the player wants to leave on the table
  * @param {string[]}   p.rack     the player's rack at the start of the turn
  * @param {boolean}    p.hasMelded whether the player already made their initial meld
+ * @param {boolean}   [p.strictJokers] official joker-retrieval rule (default true); see checkJokerRetrieval
  * @param {number}    [p.minMeld] initial meld threshold (default 30)
  * @returns {{ok: boolean, errors: {message: string, setIndex?: number}[],
  *            played: string[], rackAfter: string[], meldPoints: number,
@@ -177,7 +270,7 @@ const multisetKey = (ids) => [...ids].sort().join(',');
  *   `sets` is `after` with empty sets dropped and each set tidied into
  *   display order. `setIndex` refers to positions in `sets`.
  */
-export function validateTurn({ before, after, rack, hasMelded, minMeld = INITIAL_MELD_POINTS }) {
+export function validateTurn({ before, after, rack, hasMelded, strictJokers = true, minMeld = INITIAL_MELD_POINTS }) {
   const errors = [];
   const sets = (after || []).filter((s) => Array.isArray(s) && s.length > 0);
   const beforeIds = before.flat();
@@ -212,6 +305,12 @@ export function validateTurn({ before, after, rack, hasMelded, minMeld = INITIAL
     }
   }
   const missing = beforeIds.filter((id) => !seen.has(id));
+  if (strictJokers && missing.some(isJoker)) {
+    errors.push({ message: hasMelded
+      ? 'The joker you took from the table must be played in a set this turn'
+      : "You can't take a joker from the table before your initial meld" });
+    return result();
+  }
   if (missing.length) {
     errors.push({ message: `Tiles already on the table can't go back to your rack (${missing.map(tileLabel).join(', ')})` });
     return result();
@@ -229,6 +328,16 @@ export function validateTurn({ before, after, rack, hasMelded, minMeld = INITIAL
   analyses.forEach((a, i) => {
     if (!a.valid) errors.push({ message: a.reason, setIndex: i });
   });
+
+  // --- Jokers taken from the table (official rule).
+  if (strictJokers) {
+    const jokerErrors = checkJokerRetrieval({ before, sets, analyses, played, hasMelded });
+    if (jokerErrors.length && !hasMelded) {
+      // Before the initial meld this is the whole story; don't pile on.
+      return { ok: false, errors: jokerErrors, played, rackAfter, meldPoints: 0, sets };
+    }
+    errors.push(...jokerErrors);
+  }
 
   // --- Initial meld: only rack tiles, table sets untouched, >= 30 points.
   let meldPoints = 0;

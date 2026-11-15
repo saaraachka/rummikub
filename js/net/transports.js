@@ -4,7 +4,8 @@
 //     listener.onConnection = (conn) => {}
 //     listener.onStatus = ('online' | 'reconnecting') => {}
 //     listener.close()
-//   transport.connect(id) -> Promise<Conn>      (client side; rejects with err.code = 'not-found' | 'timeout' | ...)
+//   transport.connect(id) -> Promise<Conn>      (client side; rejects with err.code =
+//       'not-found' | 'broker-unreachable' | 'p2p-failed' | 'unsupported' | ...)
 //
 //   conn.send(obj); conn.close();
 //   conn.onData = (obj) => {}; conn.onClose = () => {}
@@ -121,9 +122,16 @@ export function peerTransport(peerOptions = {}) {
           peer.destroy();
           reject(e);
         };
-        const timer = setTimeout(() => fail(err('timeout', 'Connection timed out')), timeoutMs);
-        peer.on('error', (e) => fail(e.type === 'peer-unavailable' ? err('not-found', 'Room not found') : err(e.type || 'error', e.message)));
+        let brokerOk = false;
+        // Never got as far as the broker: no internet. Reached the broker and
+        // found the room, but the direct link never opened: the network is
+        // blocking peer-to-peer traffic (different Wi-Fi, client isolation).
+        const timer = setTimeout(() => fail(brokerOk
+          ? err('p2p-failed', 'Could not open a direct connection to the table')
+          : err('broker-unreachable', 'Could not reach the connection server')), timeoutMs);
+        peer.on('error', (e) => fail(classifyPeerError(e)));
         peer.on('open', () => {
+          brokerOk = true;
           const dc = peer.connect(id, { reliable: true, serialization: 'json' });
           dc.on('open', () => {
             if (settled) return;
@@ -131,11 +139,25 @@ export function peerTransport(peerOptions = {}) {
             clearTimeout(timer);
             resolve(wrapDataConnection(dc, () => peer.destroy()));
           });
-          dc.on('error', () => fail(err('error', 'Connection failed')));
+          dc.on('error', () => fail(err('p2p-failed', 'Connection failed')));
         });
       });
     },
   };
+}
+
+/** Map PeerJS error types onto the small set of codes room.js reports. */
+function classifyPeerError(e) {
+  switch (e?.type) {
+    case 'peer-unavailable': return err('not-found', 'Room not found');
+    case 'network':
+    case 'server-error':
+    case 'socket-error':
+    case 'socket-closed': return err('broker-unreachable', 'Could not reach the connection server');
+    case 'webrtc': return err('p2p-failed', 'Could not open a direct connection');
+    case 'browser-incompatible': return err('unsupported', 'This browser does not support WebRTC');
+    default: return err(e?.type || 'error', e?.message);
+  }
 }
 
 // ------------------------------------------------------------------ Local
@@ -232,8 +254,11 @@ export function localTransport(channelName = 'netlocal') {
   };
 }
 
-/** Pick a transport from the page URL: `?net=local` for offline tabs, PeerJS otherwise. */
-export function transportFromUrl(search = location.search) {
+/**
+ * Pick a transport from the page URL: `?net=local` for offline tabs, PeerJS
+ * otherwise. `peerOptions` go to `new Peer()` (e.g. {config: {iceServers}}).
+ */
+export function transportFromUrl(search = location.search, peerOptions = {}) {
   const p = new URLSearchParams(search);
-  return p.get('net') === 'local' ? localTransport() : peerTransport();
+  return p.get('net') === 'local' ? localTransport() : peerTransport(peerOptions);
 }

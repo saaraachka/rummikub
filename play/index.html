@@ -23,7 +23,9 @@
       <label>Your name
         <input id="nameInput" name="name" maxlength="16" autocorrect="off" placeholder="Name" required>
       </label>
-      <button class="btn primary big" type="submit">Join table</button>
+      <button id="joinBtn" class="btn primary big" type="submit">Join table</button>
+      <p id="diag" class="diag" role="status" aria-live="polite" hidden><span class="dot"></span><span id="diagText"></span></p>
+      <button id="cancelJoin" class="btn ghost" type="button" hidden>Cancel</button>
       <p id="joinError" class="join-error" role="alert"></p>
     </form>
   </section>
@@ -35,6 +37,7 @@
       <h2 id="waitTitle">Connecting…</h2>
       <p id="waitText" class="muted"></p>
       <ul id="waitPlayers" class="wait-players"></ul>
+      <p id="waitDiag" class="diag" role="status" aria-live="polite" hidden><span class="dot"></span><span></span></p>
       <button id="leaveBtn" class="btn ghost">Leave</button>
     </div>
   </section>
@@ -47,7 +50,7 @@
       <span id="timer" class="timer" hidden></span>
       <span class="pool-pill" title="Tiles left to draw"><i></i><b id="poolCount">0</b></span>
     </header>
-    <div id="offline" class="offline" hidden>Reconnecting… your rack is safe.</div>
+    <div id="offline" class="offline" hidden role="status" aria-live="polite">Reconnecting… your rack is safe.</div>
 
     <main id="boardArea" class="board-area">
       <div id="sets" class="sets"></div>

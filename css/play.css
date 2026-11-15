@@ -32,8 +32,10 @@ body { font-size: 16px; }
 
 .join { display: flex; flex-direction: column; justify-content: center; gap: 32px; padding-inline: 24px; }
 .join form { display: grid; gap: 18px; }
-.join label { display: grid; gap: 8px; font-weight: 700; color: var(--ink-dim); font-size: 15px; }
+.join label { min-width: 0; display: grid; gap: 8px; font-weight: 700; color: var(--ink-dim); font-size: 15px; }
 .join input {
+  width: 100%;
+  min-width: 0;
   font: inherit;
   font-size: 22px; /* >= 16px so iOS doesn't zoom on focus */
   font-weight: 800;
@@ -47,6 +49,16 @@ body { font-size: 16px; }
 }
 .join input:focus { box-shadow: inset 0 0 0 2px var(--accent); }
 #codeInput { text-transform: uppercase; letter-spacing: 0.3em; font-size: 30px; text-align: center; }
+.diag {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin: 0; padding: 12px 14px; border-radius: 12px;
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 15px; font-weight: 600; line-height: 1.35; text-align: left;
+}
+.diag .dot { margin-top: 5px; }
+.diag.bad { background: #5b2326; color: #ffe1e2; }
+.diag.ok { color: var(--good); }
+.join input:disabled { opacity: 0.6; }
 .join-error { color: #ff9a9d; min-height: 1.4em; margin: 0; text-align: center; font-weight: 600; }
 
 /* ---------------------------------------------------------------- waiting */

@@ -28,6 +28,13 @@
         <span>Turn timer</span>
         <div id="timerOptions" class="seg" role="radiogroup" aria-label="Turn timer"></div>
       </div>
+      <div class="setting">
+        <span>Strict joker rule<small class="setting-help">Jokers on the table can only be taken by swapping in the exact tile</small></span>
+        <div id="jokerOptions" class="seg" role="radiogroup" aria-label="Strict joker rule">
+          <button role="radio" data-strict="1">On</button>
+          <button role="radio" data-strict="0">Off</button>
+        </div>
+      </div>
       <button id="startBtn" class="btn primary big" disabled>Start game</button>
       <p id="lobbyHint" class="muted small"></p>
       <button id="resetBtn" class="btn ghost small-btn">New table (new code)</button>

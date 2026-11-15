@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createGame, addPlayer, removePlayer, renamePlayer, setTimer, startRound, commitTurn, drawTile,
-  reorderRack, scoreRound, publicView, playerView, currentPlayerId, resetToLobby,
+  reorderRack, scoreRound, publicView, playerView, currentPlayerId, resetToLobby, setStrictJokers,
 } from '../js/game/engine.js';
 
 function twoPlayerGame(seed = 1) {
@@ -191,5 +191,24 @@ describe('views', () => {
     assert.deepEqual(v.rack, s.racks.p2);
     const json = JSON.stringify(v);
     for (const id of s.racks.p1) assert.ok(!json.includes(`"${id}"`));
+  });
+});
+
+describe('strict joker setting', () => {
+  test('defaults on, can be switched off, and is enforced at commit', () => {
+    let s = twoPlayerGame();
+    assert.equal(publicView(s).settings.strictJokers, true);
+    s = rig(s, { racks: { p1: ['o11a', 'o12a', 'k1a'] }, board: [['k3a', 'k4a', 'k5a', 'Ja']], melded: { p1: true } });
+    const take = [['k3a', 'k4a', 'k5a'], ['o11a', 'o12a', 'Ja']];
+    const strict = commitTurn(s, 'p1', take);
+    assert.equal(strict.ok, false);
+    assert.match(strict.errors[0].message, /joker that stands for black 6/);
+    const loose = commitTurn(setStrictJokers(s, false), 'p1', take);
+    assert.equal(loose.ok, true, JSON.stringify(loose.errors));
+  });
+  test('saved games without the setting are treated as strict', () => {
+    const s = twoPlayerGame();
+    delete s.settings.strictJokers;
+    assert.equal(publicView(s).settings.strictJokers, true);
   });
 });

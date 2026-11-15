@@ -2,10 +2,11 @@
 // every move with the pure engine, and sends each phone a snapshot of the
 // public state plus that phone's own rack.
 
-import { APP_ID } from '../config.js';
+import { APP_ID, peerOptions } from '../config.js';
 import { hostRoom } from '../net/room.js';
+import { transportFromUrl } from '../net/transports.js';
 import {
-  createGame, addPlayer, renamePlayer, removePlayer, setTimer, startRound, commitTurn,
+  createGame, addPlayer, renamePlayer, removePlayer, setTimer, setStrictJokers, startRound, commitTurn,
   drawTile, reorderRack, resetToLobby, publicView, playerView, currentPlayerId,
   MIN_PLAYERS, MAX_PLAYERS, TIMER_OPTIONS,
 } from '../game/engine.js';
@@ -61,6 +62,7 @@ async function boot() {
     room = await hostRoom({
       appId: APP_ID,
       code: forcedCode || saved?.code,
+      transport: transportFromUrl(location.search, peerOptions()),
       accept: (clientId) => {
         if (seats[clientId]) return true;
         if (game.phase !== 'lobby') return 'This game has already started. Ask the table to go back to the lobby to join.';
@@ -199,6 +201,7 @@ function setupLobby() {
   const url = new URL('../play/', location.href);
   url.searchParams.set('room', room.code);
   if (params.get('net') === 'local') url.searchParams.set('net', 'local');
+  if (params.get('relay') === '1') url.searchParams.set('relay', '1');
   const qr = qrcode(0, 'M');
   qr.addData(url.href);
   qr.make();
@@ -215,6 +218,13 @@ function setupLobby() {
     const b = e.target.closest('button[data-s]');
     if (!b) return;
     game = setTimer(game, Number(b.dataset.s));
+    commit({ broadcast: true });
+  });
+
+  $('jokerOptions').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-strict]');
+    if (!b) return;
+    game = setStrictJokers(game, b.dataset.strict === '1');
     commit({ broadcast: true });
   });
 
@@ -312,6 +322,7 @@ function renderLobby(v) {
   }
   $('playerCount').textContent = `${v.players.length}/${MAX_PLAYERS}`;
   for (const b of $('timerOptions').children) b.setAttribute('aria-checked', String(Number(b.dataset.s) === v.settings.timer));
+  for (const b of $('jokerOptions').children) b.setAttribute('aria-checked', String((b.dataset.strict === '1') === v.settings.strictJokers));
   const enough = v.players.length >= MIN_PLAYERS;
   $('startBtn').disabled = !enough;
   $('lobbyHint').textContent = enough

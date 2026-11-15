@@ -16,6 +16,7 @@
 //   const conn = joinRoom({ appId: 'mygame', code, hello: {name} })
 //   conn.clientId                     // stable per device+room (localStorage)
 //   conn.on('status', (s, detail) => {})  // connecting | connected | reconnecting | rejected | not-found
+//                                         // detail: rejection reason (string), or {error, attempt} after a failure
 //   conn.on('message', (msg) => {})
 //   conn.send(msg); conn.setHello(h); conn.close()
 //
@@ -222,6 +223,7 @@ export function joinRoom({ appId, code, hello, slot = '', transport = transportF
   let retryTimer = null;
   let lastHeard = 0;
   let connecting = false;
+  let lastError = null; // why the last attempt failed, for diagnostics
 
   const setStatus = (s, detail) => {
     if (s === status && !detail) return;
@@ -260,6 +262,8 @@ export function joinRoom({ appId, code, hello, slot = '', transport = transportF
         if (!welcomed && conn === c) {
           drop();
           attempt++;
+          lastError = 'no-welcome';
+          setStatus('reconnecting', { error: lastError, attempt });
           scheduleRetry();
         }
       }, 6000);
@@ -270,6 +274,7 @@ export function joinRoom({ appId, code, hello, slot = '', transport = transportF
           welcomed = true;
           clearTimeout(welcomeTimer);
           attempt = 0;
+          lastError = null;
           setStatus('connected');
         } else if (m.t === 'reject') {
           clearTimeout(welcomeTimer);
@@ -287,8 +292,9 @@ export function joinRoom({ appId, code, hello, slot = '', transport = transportF
         if (conn !== c) return;
         conn = null;
         if (!closed) {
-          setStatus('reconnecting');
           attempt++;
+          lastError = 'lost';
+          setStatus('reconnecting', { error: lastError, attempt });
           scheduleRetry();
         }
       };
@@ -296,8 +302,10 @@ export function joinRoom({ appId, code, hello, slot = '', transport = transportF
       c.send({ t: 'hello', clientId, hello });
     } catch (e) {
       attempt++;
-      if (e.code === 'not-found') setStatus(attempt > 2 ? 'not-found' : 'reconnecting');
-      else setStatus('reconnecting');
+      lastError = e.code || 'error';
+      const detail = { error: lastError, attempt };
+      if (e.code === 'not-found') setStatus(attempt > 2 ? 'not-found' : 'reconnecting', detail);
+      else setStatus('reconnecting', detail);
       scheduleRetry(e.code === 'not-found' ? Math.min(1500 * attempt, 6000) : undefined);
     } finally {
       connecting = false;
@@ -336,6 +344,9 @@ export function joinRoom({ appId, code, hello, slot = '', transport = transportF
     code,
     on: ev.on,
     get status() { return status; },
+    /** Last failure code: not-found | broker-unreachable | p2p-failed | lost | no-welcome | ... (null once connected). */
+    get lastError() { return lastError; },
+    get attempt() { return attempt; },
     send(data) {
       if (conn && status === 'connected') {
         conn.send({ t: 'msg', data });

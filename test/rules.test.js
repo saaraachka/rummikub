@@ -288,3 +288,99 @@ describe('meldPointsFromRack', () => {
     assert.equal(pts, 33);
   });
 });
+
+describe('validateTurn: official joker rule (strict)', () => {
+  // Black run 3-4-5-J: the joker stands for the black 6.
+  const before = [['k3a', 'k4a', 'k5a', 'Ja'], ['r7a', 'r8a', 'r9a']];
+
+  test('valid swap: black 6 replaces the joker, joker goes into a new set', () => {
+    const after = [['k3a', 'k4a', 'k5a', 'k6a'], before[1], ['o11a', 'o12a', 'Ja']];
+    const v = validateTurn({ before, after, rack: ['k6a', 'o11a', 'o12a'], hasMelded: true });
+    assert.equal(v.ok, true, JSON.stringify(v.errors));
+  });
+  test('valid swap: retrieved joker can join an existing set', () => {
+    const after = [['k3a', 'k4a', 'k5a', 'k6a'], ['r7a', 'r8a', 'r9a', 'Ja']];
+    const v = validateTurn({ before, after, rack: ['k6a'], hasMelded: true });
+    assert.equal(v.ok, true, JSON.stringify(v.errors));
+  });
+  test('group of 3: either missing color can replace the joker', () => {
+    const b = [['k7a', 'r7a', 'Ja']];
+    for (const swap of ['b7a', 'o7a']) {
+      const after = [['k7a', 'r7a', swap], ['b1a', 'b2a', 'Ja']];
+      const v = validateTurn({ before: b, after, rack: [swap, 'b1a', 'b2a'], hasMelded: true });
+      assert.equal(v.ok, true, `${swap}: ${JSON.stringify(v.errors)}`);
+    }
+  });
+  test('group of 4: only the one missing color works', () => {
+    const b = [['k7a', 'r7a', 'b7a', 'Ja']];
+    const ok = validateTurn({ before: b, after: [['k7a', 'r7a', 'b7a', 'o7a'], ['b1a', 'b2a', 'Ja']], rack: ['o7a', 'b1a', 'b2a'], hasMelded: true });
+    assert.equal(ok.ok, true, JSON.stringify(ok.errors));
+  });
+  test('swap with the wrong tile is rejected', () => {
+    // Red 6 instead of the black 6 the joker stood for.
+    const after = [['k3a', 'k4a', 'k5a'], ['r6a', 'r7a', 'r8a', 'r9a'], ['o11a', 'o12a', 'Ja']];
+    const v = validateTurn({ before, after, rack: ['r6a', 'o11a', 'o12a'], hasMelded: true });
+    assert.equal(v.ok, false);
+    assert.match(v.errors[0].message, /joker that stands for black 6, you must play a black 6 from your rack/);
+    assert.equal(v.errors[0].setIndex, 2);
+  });
+  test('replacing the joker with a tile from the table (not the rack) is rejected', () => {
+    const b = [['k7a', 'r7a', 'Ja'], ['b7a', 'b8a', 'b9a', 'b10a']];
+    const after = [['k7a', 'r7a', 'b7a'], ['b8a', 'b9a', 'b10a'], ['o1a', 'o2a', 'Ja']];
+    const v = validateTurn({ before: b, after, rack: ['o1a', 'o2a'], hasMelded: true });
+    assert.equal(v.ok, false);
+    assert.match(v.errors[0].message, /blue or orange 7 from your rack/);
+  });
+  test('taking the joker without any replacement is rejected', () => {
+    const after = [['k3a', 'k4a', 'k5a'], before[1], ['o11a', 'o12a', 'Ja']];
+    const v = validateTurn({ before, after, rack: ['o11a', 'o12a'], hasMelded: true });
+    assert.equal(v.ok, false);
+    assert.match(v.errors[0].message, /stands for black 6/);
+  });
+  test('retrieved joker left unplayed is rejected', () => {
+    const v = validateTurn({ before: [['r4a', 'Ja', 'r6a']], after: [['r4a', 'r5a', 'r6a']], rack: ['r5a'], hasMelded: true });
+    assert.equal(v.ok, false);
+    assert.match(v.errors[0].message, /joker you took from the table must be played in a set this turn/);
+  });
+  test('retrieval before the initial meld is rejected', () => {
+    const b = [['r4a', 'Ja', 'r6a']];
+    const after = [['r4a', 'r5a', 'r6a'], ['k10a', 'k11a', 'k12a', 'Ja']];
+    const v = validateTurn({ before: b, after, rack: ['r5a', 'k10a', 'k11a', 'k12a'], hasMelded: false });
+    assert.equal(v.ok, false);
+    assert.equal(v.errors.length, 1);
+    assert.match(v.errors[0].message, /can't take a joker from the table before your initial meld/);
+  });
+  test('joker that keeps standing for the same tile may move (split a run)', () => {
+    // r3-r4-r5-J-r7-r8: joker is red 6. Split into r3-r4-r5 and J-r7-r8 (still red 6), add r9.
+    const b = [['r3a', 'r4a', 'r5a', 'Ja', 'r7a', 'r8a']];
+    const after = [['r3a', 'r4a', 'r5a'], ['Ja', 'r7a', 'r8a', 'r9a']];
+    const v = validateTurn({ before: b, after, rack: ['r9a'], hasMelded: true });
+    assert.equal(v.ok, true, JSON.stringify(v.errors));
+  });
+  test('adding to a set with a joker leaves the joker alone', () => {
+    const v = validateTurn({ before, after: [['k2a', 'k3a', 'k4a', 'k5a', 'Ja'], before[1]], rack: ['k2a'], hasMelded: true });
+    assert.equal(v.ok, true, JSON.stringify(v.errors));
+  });
+  test('two jokers each need their own replacement', () => {
+    const b = [['b3a', 'Ja', 'Jb', 'b6a']]; // jokers are blue 4 and blue 5
+    const oneSwap = [['b3a', 'b4a', 'Jb', 'b6a'], ['k9a', 'k10a', 'Ja']];
+    assert.equal(validateTurn({ before: b, after: oneSwap, rack: ['b4a', 'k9a', 'k10a'], hasMelded: true }).ok, true);
+    const bothTaken = [['b3a', 'b4a', 'b5a', 'b6a'], ['k9a', 'k10a', 'Ja', 'Jb']];
+    assert.equal(validateTurn({ before: b, after: bothTaken, rack: ['b4a', 'b5a', 'k9a', 'k10a'], hasMelded: true }).ok, true);
+  });
+});
+
+describe('validateTurn: loose joker rule (strictJokers: false)', () => {
+  test('a joker may leave its set without a replacement', () => {
+    const before = [['k3a', 'k4a', 'k5a', 'Ja']];
+    const after = [['k3a', 'k4a', 'k5a'], ['o11a', 'o12a', 'Ja']];
+    const rack = ['o11a', 'o12a'];
+    assert.equal(validateTurn({ before, after, rack, hasMelded: true, strictJokers: false }).ok, true);
+    assert.equal(validateTurn({ before, after, rack, hasMelded: true, strictJokers: true }).ok, false);
+  });
+  test('table tiles still cannot go back to the rack', () => {
+    const v = validateTurn({ before: [['r4a', 'Ja', 'r6a']], after: [['r4a', 'r5a', 'r6a']], rack: ['r5a'], hasMelded: true, strictJokers: false });
+    assert.equal(v.ok, false);
+    assert.match(v.errors[0].message, /can't go back to your rack/);
+  });
+});

@@ -16,7 +16,7 @@ const multisetKey = (ids) => [...ids].sort().join(',');
 export function createGame() {
   return {
     phase: 'lobby', // lobby | playing | roundOver
-    settings: { timer: 0 },
+    settings: { timer: 0, strictJokers: true },
     players: [], // [{id, name, score}]
     round: 0,
     pool: [],
@@ -64,6 +64,16 @@ export function setTimer(state, seconds) {
   s.settings.timer = seconds;
   return s;
 }
+
+/** Official joker-retrieval rule on (default) or the looser "move jokers freely" house rule. */
+export function setStrictJokers(state, on) {
+  const s = clone(state);
+  s.settings.strictJokers = !!on;
+  return s;
+}
+
+/** Saved games from before the setting existed count as strict. */
+export const strictJokersOn = (state) => state.settings.strictJokers !== false;
 
 function cleanName(name) {
   const n = String(name ?? '').replace(/\s+/g, ' ').trim().slice(0, 16);
@@ -140,6 +150,7 @@ export function commitTurn(state, playerId, sets) {
     after: sets,
     rack: state.racks[playerId],
     hasMelded: state.melded[playerId],
+    strictJokers: strictJokersOn(state),
   });
   const s = clone(state);
   if (!v.ok) {
@@ -255,7 +266,7 @@ function endRound(s, winnerId, reason) {
 export function publicView(state) {
   return {
     phase: state.phase,
-    settings: state.settings,
+    settings: { ...state.settings, strictJokers: strictJokersOn(state) },
     round: state.round,
     players: state.players.map((p) => ({
       id: p.id,
